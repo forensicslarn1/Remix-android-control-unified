@@ -1,0 +1,66 @@
+name: Windows desktop build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    env:
+      CERTIFICATE_CONFIGURED: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 != '' && secrets.WINDOWS_CERTIFICATE_PASSWORD != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable-x86_64-pc-windows-msvc
+
+      - name: Download Android Platform Tools
+        shell: pwsh
+        run: .\scripts\build-windows.ps1
+
+      - name: Sign executable when certificate secrets are configured
+        if: env.CERTIFICATE_CONFIGURED == 'true'
+        env:
+          WINDOWS_CERTIFICATE_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP 'windows-code-signing.pfx'
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_BASE64))
+          $signtool = Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { throw 'Windows SDK signtool.exe was not found.' }
+          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr 'http://timestamp.digicert.com' /f $certPath /p $env:WINDOWS_CERTIFICATE_PASSWORD 'desktop-companion\target\release\android-control-center-desktop.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'Authenticode signing failed.' }
+          & $signtool.FullName verify /pa /all 'desktop-companion\target\release\android-control-center-desktop.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'Authenticode signature verification failed.' }
+          Remove-Item $certPath -Force
+
+      - name: Package Windows artifact
+        shell: pwsh
+        run: |
+          $out = "android-control-center-windows-x64"
+          New-Item -ItemType Directory -Force $out | Out-Null
+          Copy-Item desktop-companion\target\release\android-control-center-desktop.exe $out\
+          Copy-Item desktop-companion\resources\adb $out\adb -Recurse
+          Compress-Archive -Path $out -DestinationPath "$out.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-control-center-windows-x64
+          path: android-control-center-windows-x64.zip
+
+      - name: Attach release asset for version tags
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: android-control-center-windows-x64.zip

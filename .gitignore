@@ -6,6 +6,8 @@
 dist/
 build/
 *.dist
+target/
+**/target/
 
 # Environment variables
 .env
