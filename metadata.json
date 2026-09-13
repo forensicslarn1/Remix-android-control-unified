@@ -1,0 +1,6 @@
+{
+  "name": "Android Control Center",
+  "description": "A local-first Android ADB control desk with WebUSB device control, Logcat live streaming & .txt debugging export, debloating, and integrated Gemini AI assistant.",
+  "requestFramePermissions": ["usb"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
