@@ -515,10 +515,24 @@ export default function Home() {
     }
   };
 
-  const connect = async () => {
+  useEffect(() => {
+    const unsub = adb.current.onDisconnect(() => {
+      setDevice(null);
+      setPackages([]);
+      setDisabledPackages([]);
+      setRoot(false);
+      setMirrorState({ phase: "idle", detail: "USB device detached. Connect to resume." });
+      toast.warning(language === "ar" ? "تم فصل جهاز USB." : "WebUSB device was physically disconnected.");
+    });
+    return () => {
+      unsub();
+    };
+  }, [language]);
+
+  const connect = async (targetDevice?: any) => {
     setConnecting(true);
     try {
-      const profile = await adb.current.connect();
+      const profile = await adb.current.connect(targetDevice);
       setDevice(profile);
       addReceipt(
         { command: "WebUSB → ADB authentication", stdout: `${profile.manufacturer} ${profile.model} authorized.`, stderr: "", exitCode: 0, at: new Date().toISOString() },

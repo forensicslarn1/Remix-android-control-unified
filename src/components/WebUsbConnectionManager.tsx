@@ -32,7 +32,7 @@ export interface WebUsbConnectionManagerProps {
   root?: boolean;
   packageCount?: number;
   language?: "en" | "ar" | "other";
-  onConnect: () => Promise<void> | void;
+  onConnect: (device?: any) => Promise<void> | void;
   onDisconnect?: () => Promise<void> | void;
   onRefreshProps?: () => Promise<void> | void;
   className?: string;
@@ -45,6 +45,7 @@ interface PairedUsbDevice {
   vendorId: number;
   productId: number;
   serialNumber?: string;
+  rawDevice?: any;
 }
 
 export function WebUsbConnectionManager({
@@ -105,6 +106,7 @@ export function WebUsbConnectionManager({
             vendorId: d.vendorId,
             productId: d.productId,
             serialNumber: d.serialNumber,
+            rawDevice: d,
           }))
         );
       } catch {
@@ -446,7 +448,7 @@ export function WebUsbConnectionManager({
                   {pairedDevices.map((dev, idx) => (
                     <button
                       key={idx}
-                      onClick={onConnect}
+                      onClick={() => onConnect(dev.rawDevice)}
                       className="inline-flex items-center gap-1.5 rounded border border-[#14253a] bg-white px-2.5 py-1 text-xs font-medium text-[#14253a] hover:bg-[#eef8cd] dark:border-[#527089] dark:bg-[#10243a] dark:text-[#e7eef3]"
                     >
                       <Usb size={12} className="text-[#59869c]" />

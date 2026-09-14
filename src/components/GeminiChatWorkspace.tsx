@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+// WARNING: Client-side Gemini fallback requested explicitly for zero-downtime offline environments.
+import { GoogleGenAI } from "@google/genai";
 import {
   Bot,
   Send,
@@ -219,9 +221,11 @@ export function GeminiChatWorkspace({
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Gemini API key server status
+  // Gemini API key server status & client-side fallback
   const [apiKeyConfigured, setApiKeyConfigured] = useState<boolean | null>(null);
   const [isCheckingKey, setIsCheckingKey] = useState<boolean>(false);
+  const [useClientFallback, setUseClientFallback] = useState<boolean>(false);
+  const clientFallbackKey = ((import.meta.env.VITE_GEMINI_API_KEY as string | undefined) || "").trim();
 
   const checkApiKeyStatus = async () => {
     try {
@@ -229,14 +233,25 @@ export function GeminiChatWorkspace({
       const res = await fetch("/api/gemini/status");
       if (res.ok) {
         const data = await res.json();
-        setApiKeyConfigured(data.configured === true);
-      } else {
-        setApiKeyConfigured(false);
+        if (data.configured === true) {
+          setApiKeyConfigured(true);
+          setUseClientFallback(false);
+          return;
+        }
       }
     } catch {
-      setApiKeyConfigured(false);
+      // Server unreachable or offline
     } finally {
       setIsCheckingKey(false);
+    }
+
+    // Check client-side fallback key
+    if (clientFallbackKey) {
+      setApiKeyConfigured(true);
+      setUseClientFallback(true);
+    } else {
+      setApiKeyConfigured(false);
+      setUseClientFallback(false);
     }
   };
 
@@ -363,8 +378,8 @@ export function GeminiChatWorkspace({
     setMessages((prev) => [...prev, botMessage]);
     setIsGenerating(true);
 
-    // If known that API key is not configured, provide immediate setup guidance
-    if (apiKeyConfigured === false) {
+    // If known that API key is not configured and no client key fallback exists, provide setup guidance
+    if (apiKeyConfigured === false && !clientFallbackKey) {
       const botMessageId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const guidance = isAr
         ? `⚠️ **مفتاح GEMINI_API_KEY غير معين حالياً**
@@ -372,7 +387,7 @@ export function GeminiChatWorkspace({
 لتفعيل ردود نموذج Gemini الذكي مباشرة:
 1. افتح قائمة **Settings** (أيقونة الترس في أعلى نافذة AI Studio).
 2. اختر قسم **Secrets**.
-3. أضف متغير باسم \`GEMINI_API_KEY\` والصق قيمة مفتاح Gemini الخاص بك.
+3. أضف متغير باسم \`GEMINI_API_KEY\` (أو \`VITE_GEMINI_API_KEY\`) والصق قيمة مفتاح Gemini الخاص بك.
 4. بعد الحفظ، اضغط على زر **«إعادة فحص الاتصال»** في الشريط العلوي وسيبدأ المساعد بالعمل فوراً.
 
 *ملاحظة: يمكنك استخدام جميع وظائف مركز التحكم الأخرى (WebUSB ADB، تدفق وتصدير Logcat، إدارة التطبيقات) بشكل طبيعي دون الحاجة للمفتاح.*`
@@ -381,7 +396,7 @@ export function GeminiChatWorkspace({
 To enable live Gemini AI responses:
 1. Open the **Settings** menu (gear icon in the top AI Studio toolbar).
 2. Go to the **Secrets** section.
-3. Add a secret named \`GEMINI_API_KEY\` with your Google Gemini API key.
+3. Add a secret named \`GEMINI_API_KEY\` (or \`VITE_GEMINI_API_KEY\`) with your Google Gemini API key.
 4. Click **Re-check Status** in the banner above to immediately enable live AI responses.
 
 *Note: All core Android Control features (WebUSB ADB shell, Logcat streaming & .txt exports, and debloating) operate locally without needing an API key.*`;
@@ -402,6 +417,59 @@ To enable live Gemini AI responses:
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    // Direct client fallback execution
+    if (useClientFallback && clientFallbackKey) {
+      try {
+        const ai = new GoogleGenAI({ apiKey: clientFallbackKey });
+        const contents = newMessages.map((m) => ({
+          role: m.role === "user" ? "user" : "model",
+          parts: [{ text: m.content }],
+        }));
+
+        const responseStream = await ai.models.generateContentStream({
+          model: selectedModel,
+          contents,
+          config: {
+            systemInstruction: enrichedSystemInstruction,
+          },
+        });
+
+        let accumulatedText = "";
+        for await (const chunk of responseStream) {
+          if (controller.signal.aborted) break;
+          if (chunk.text) {
+            accumulatedText += chunk.text;
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === botMessageId
+                  ? { ...msg, content: accumulatedText }
+                  : msg
+              )
+            );
+          }
+        }
+      } catch (clientErr: any) {
+        if (clientErr.name === "AbortError" || controller.signal.aborted) {
+          // Handled
+        } else {
+          setErrorStatus(clientErr?.message || "Client-side Gemini error");
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === botMessageId
+                ? {
+                    ...msg,
+                    content: `⚠️ Error: ${clientErr?.message || "Direct client generation failed"}`,
+                  }
+                : msg
+            )
+          );
+        }
+      } finally {
+        setIsGenerating(false);
+      }
+      return;
+    }
+
     try {
       const response = await fetch("/api/chat/stream", {
         method: "POST",
@@ -418,6 +486,40 @@ To enable live Gemini AI responses:
       });
 
       if (!response.ok) {
+        // If server failed and client fallback key is available, attempt client fallback seamlessly
+        if (clientFallbackKey) {
+          setUseClientFallback(true);
+          const ai = new GoogleGenAI({ apiKey: clientFallbackKey });
+          const contents = newMessages.map((m) => ({
+            role: m.role === "user" ? "user" : "model",
+            parts: [{ text: m.content }],
+          }));
+
+          const responseStream = await ai.models.generateContentStream({
+            model: selectedModel,
+            contents,
+            config: {
+              systemInstruction: enrichedSystemInstruction,
+            },
+          });
+
+          let accumulatedText = "";
+          for await (const chunk of responseStream) {
+            if (controller.signal.aborted) break;
+            if (chunk.text) {
+              accumulatedText += chunk.text;
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === botMessageId
+                    ? { ...msg, content: accumulatedText }
+                    : msg
+                )
+              );
+            }
+          }
+          return;
+        }
+
         // Non-stream or error response
         const errorData = await response.json().catch(() => ({}));
         throw new Error(
@@ -629,20 +731,42 @@ To enable live Gemini AI responses:
       </div>
 
       {/* API Key Status Notice */}
-      {apiKeyConfigured === false && (
+      {useClientFallback && clientFallbackKey && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2 bg-[#f4fae8] dark:bg-[#142310] border-b border-[#cce89c] dark:border-[#2f4b23] text-[#345c16] dark:text-[#b0ea77] text-xs">
+          <div className="flex items-center gap-2">
+            <Sparkles size={14} className="text-[#598c25] dark:text-[#a8e869] shrink-0" />
+            <span className="font-semibold text-[0.78rem]">
+              {isAr
+                ? "وضع الاتصال المباشر بالواجهة نشط (VITE_GEMINI_API_KEY)"
+                : "Direct Client-Side Mode Active (VITE_GEMINI_API_KEY)"}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={checkApiKeyStatus}
+            disabled={isCheckingKey}
+            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border border-[#a2d861] bg-[#ffffff] text-[#345c16] hover:bg-[#e4f4cf] dark:border-[#406828] dark:bg-[#101c0b] dark:text-[#b0ea77] text-[0.7rem] font-medium shrink-0"
+          >
+            <RefreshCw size={10} className={isCheckingKey ? "animate-spin" : ""} />
+            <span>{isAr ? "فحص الخادم" : "Check Server"}</span>
+          </button>
+        </div>
+      )}
+
+      {apiKeyConfigured === false && !clientFallbackKey && (
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-2.5 bg-[#fdf3e7] dark:bg-[#281c10] border-b border-[#f1d0aa] dark:border-[#4d361c] text-[#854508] dark:text-[#f8b878] text-xs">
           <div className="flex items-start gap-2.5">
             <AlertCircle size={16} className="text-[#c46914] dark:text-[#f8b878] shrink-0 mt-0.5" />
             <div>
               <p className="font-semibold text-[0.78rem]">
                 {isAr
-                  ? "مفتاح GEMINI_API_KEY غير معين في الخادم حالياً"
-                  : "GEMINI_API_KEY is not configured in the server environment"}
+                  ? "مفتاح GEMINI_API_KEY غير معين حالياً"
+                  : "GEMINI_API_KEY is not configured"}
               </p>
               <p className="text-[0.72rem] text-[#9b5b18] dark:text-[#d4995f] mt-0.5">
                 {isAr
-                  ? "لتشغيل ردود الذكاء الاصطناعي، يرجى إضافة المفتاح من قائمة Settings > Secrets في AI Studio. بقية أدوات ADB و Logcat تعمل بالكامل محلياً."
-                  : "To activate live Gemini AI responses, add your GEMINI_API_KEY under Settings > Secrets in AI Studio. All ADB & Logcat features operate locally."}
+                  ? "لتشغيل ردود الذكاء الاصطناعي، يرجى إضافة المفتاح GEMINI_API_KEY في Settings > Secrets أو VITE_GEMINI_API_KEY في البيئة. بقية أدوات ADB و Logcat تعمل بالكامل محلياً."
+                  : "To activate live Gemini AI responses, add GEMINI_API_KEY under Settings > Secrets or VITE_GEMINI_API_KEY in environment. Core WebUSB ADB & Logcat features operate locally."}
               </p>
             </div>
           </div>
