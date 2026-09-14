@@ -29,6 +29,7 @@ import { toast } from "sonner";
 export interface WebUsbConnectionManagerProps {
   device: DeviceProfile | null;
   connecting: boolean;
+  authPromptMessage?: string | null;
   root?: boolean;
   packageCount?: number;
   language?: "en" | "ar" | "other";
@@ -51,6 +52,7 @@ interface PairedUsbDevice {
 export function WebUsbConnectionManager({
   device,
   connecting,
+  authPromptMessage,
   root = false,
   packageCount,
   language = "en",
@@ -420,6 +422,42 @@ export function WebUsbConnectionManager({
                 )}
               </Button>
             </div>
+
+            {/* Clear UI Notification for ADB Authorization Prompt */}
+            {(authPromptMessage || (connecting && !isConnected)) && (
+              <div
+                id="adb-authorization-alert"
+                className="rounded border-2 border-amber-500/80 bg-amber-50/95 p-4 text-amber-950 shadow-sm dark:border-amber-500/60 dark:bg-amber-950/60 dark:text-amber-100 animate-in fade-in duration-300"
+              >
+                <div className="flex items-start gap-3.5">
+                  <div className="relative mt-0.5 shrink-0">
+                    <Smartphone className="h-6 w-6 text-amber-600 dark:text-amber-400 animate-pulse" />
+                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+                    </span>
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h5 className="font-bold text-sm tracking-tight text-amber-900 dark:text-amber-100">
+                        {isArabic
+                          ? "يرجى إلغاء قفل جهازك والضغط على 'السماح بتصحيح أخطاء USB'"
+                          : "Please unlock your device and tap 'Allow USB debugging'"}
+                      </h5>
+                      <span className="inline-flex items-center gap-1 rounded bg-amber-200/80 px-2 py-0.5 text-[0.68rem] font-semibold text-amber-900 dark:bg-amber-900/80 dark:text-amber-200 uppercase tracking-wide">
+                        <Loader2 size={11} className="animate-spin" />
+                        {isArabic ? "بانتظار موافقة الهاتف..." : "Awaiting phone approval..."}
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-800/90 dark:text-amber-200/85 leading-relaxed">
+                      {isArabic
+                        ? "يتم الآن انتظار موافقتك على شاشة الهاتف. حدد 'السماح دائماً من هذا الكمبيوتر' ثم اضغط على 'موافق' أو 'Allow' لإكمال المصادقة عبر WebUSB."
+                        : "Check your Android device screen now. Select 'Always allow from this computer' and tap 'Allow' or 'OK'. The workbench is polling and will automatically complete the connection."}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* If WebUSB is completely unsupported */}
             {!capabilities.hasUsb && (

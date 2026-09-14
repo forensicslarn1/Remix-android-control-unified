@@ -181,6 +181,7 @@ export default function Home() {
   const [active, setActive] = useState<Workspace>("overview");
   const [device, setDevice] = useState<DeviceProfile | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [authPromptMessage, setAuthPromptMessage] = useState<string | null>(null);
   const [root, setRoot] = useState(false);
   const [packages, setPackages] = useState<string[]>([]);
   const [disabledPackages, setDisabledPackages] = useState<string[]>([]);
@@ -521,18 +522,38 @@ export default function Home() {
       setPackages([]);
       setDisabledPackages([]);
       setRoot(false);
+      setAuthPromptMessage(null);
+      toast.dismiss("adb-auth-prompt");
       setMirrorState({ phase: "idle", detail: "USB device detached. Connect to resume." });
       toast.warning(language === "ar" ? "تم فصل جهاز USB." : "WebUSB device was physically disconnected.");
     });
+
+    const unsubAuth = adb.current.onAuthStatus((status) => {
+      if (status.state === "unauthorized") {
+        setAuthPromptMessage(status.message);
+        toast.warning(status.message, { id: "adb-auth-prompt", duration: 15000 });
+      } else if (status.state === "authorized") {
+        setAuthPromptMessage(null);
+        toast.dismiss("adb-auth-prompt");
+      }
+    });
+
     return () => {
       unsub();
+      unsubAuth();
     };
   }, [language]);
 
   const connect = async (targetDevice?: any) => {
     setConnecting(true);
+    setAuthPromptMessage(null);
     try {
-      const profile = await adb.current.connect(targetDevice);
+      const profile = await adb.current.connect(targetDevice, (promptMsg) => {
+        setAuthPromptMessage(promptMsg);
+        toast.warning(promptMsg, { id: "adb-auth-prompt", duration: 15000 });
+      });
+      setAuthPromptMessage(null);
+      toast.dismiss("adb-auth-prompt");
       setDevice(profile);
       addReceipt(
         { command: "WebUSB → ADB authentication", stdout: `${profile.manufacturer} ${profile.model} authorized.`, stderr: "", exitCode: 0, at: new Date().toISOString() },
@@ -543,6 +564,8 @@ export default function Home() {
       addNotification("success", { en: "Device is ready", ar: "الجهاز جاهز" }, { en: `${profile.manufacturer} ${profile.model} is authorized and inventoried locally.`, ar: `تمت مصادقة ${profile.manufacturer} ${profile.model} وفهرسته محلياً.` });
       toast.success("Device inventory is ready.");
     } catch (error) {
+      setAuthPromptMessage(null);
+      toast.dismiss("adb-auth-prompt");
       const detail = error instanceof Error ? error.message : "Unable to connect to the selected device.";
       addReceipt({ command: "WebUSB → ADB authentication", stdout: "", stderr: detail, exitCode: 1, at: new Date().toISOString() }, "Connection stopped", "Browser");
       addNotification("warning", { en: "Connection needs attention", ar: "الاتصال يحتاج إلى انتباه" }, { en: `${detail} Confirm the browser device chooser and the phone’s USB debugging approval.`, ar: `${detail} تحقق من اختيار الجهاز في المتصفح ومن موافقة تصحيح USB على الهاتف.` });
@@ -554,6 +577,8 @@ export default function Home() {
 
   const disconnect = async () => {
     try {
+      setAuthPromptMessage(null);
+      toast.dismiss("adb-auth-prompt");
       abortBulkRef.current = true;
       setBulkExecuting(false);
       setBulkProgress(null);
@@ -1023,6 +1048,7 @@ export default function Home() {
             <WebUsbConnectionManager
               device={device}
               connecting={connecting}
+              authPromptMessage={authPromptMessage}
               root={root}
               packageCount={packages.length}
               language={language}

@@ -7,13 +7,22 @@
  * - Robust subprocess invocation with timeout & error handling
  * - Automatic physical USB disconnect detection and recovery
  */
-import { Adb, AdbDaemonTransport } from "@yume-chan/adb";
+import {
+  Adb,
+  AdbDaemonTransport,
+  ADB_DEFAULT_AUTHENTICATORS,
+  AdbSignatureAuthenticator,
+  AdbPublicKeyAuthenticator,
+  type AdbCredentialStore,
+} from "@yume-chan/adb";
 import AdbWebCredentialStore from "@yume-chan/adb-credential-web";
 import {
   AdbDaemonWebUsbConnection,
   AdbDaemonWebUsbDevice,
   AdbDaemonWebUsbDeviceManager,
 } from "@yume-chan/adb-daemon-webusb";
+
+export { default as AdbWebCredentialStore } from "@yume-chan/adb-credential-web";
 import { AdbScrcpyClient, AdbScrcpyOptions2_1 } from "@yume-chan/adb-scrcpy";
 import {
   BitmapVideoFrameRenderer,
@@ -199,18 +208,28 @@ function readableResponse(response: Response) {
   return AdbReadableStream.from(chunks());
 }
 
+export type AuthState = "idle" | "connecting" | "unauthorized" | "authorized";
+
+export interface AuthProgressStatus {
+  state: AuthState;
+  message: string;
+}
+
 /**
  * High-Assurance WebUSB ADB Client for modern Chromium environments.
  */
 export class BrowserAdbClient {
   private adb: Adb | null = null;
+  private currentTransport: AdbDaemonTransport | null = null;
   private currentDevice: AdbDaemonWebUsbDevice | null = null;
   private currentConnection: AdbDaemonWebUsbConnection | null = null;
   // IndexedDB credential store: generates and preserves RSA-2048 keys across reloads
   private credentialStore = new AdbWebCredentialStore("android-control-unified");
   private disconnectListeners = new Set<() => void>();
+  private authStatusListeners = new Set<(status: AuthProgressStatus) => void>();
   private activeStreams = new Set<() => Promise<void> | void>();
   private boundUsbDisconnectListener: ((e: any) => void) | null = null;
+  private isDisconnectRequested = false;
 
   constructor() {
     this.setupUsbGlobalListener();
@@ -253,6 +272,23 @@ export class BrowserAdbClient {
     return this.currentDevice?.serial || null;
   }
 
+  onAuthStatus(listener: (status: AuthProgressStatus) => void): () => void {
+    this.authStatusListeners.add(listener);
+    return () => {
+      this.authStatusListeners.delete(listener);
+    };
+  }
+
+  private notifyAuthStatus(state: AuthState, message: string) {
+    for (const listener of Array.from(this.authStatusListeners)) {
+      try {
+        listener({ state, message });
+      } catch (e) {
+        console.error("Auth status listener error:", e);
+      }
+    }
+  }
+
   onDisconnect(listener: () => void): () => void {
     this.disconnectListeners.add(listener);
     return () => {
@@ -276,10 +312,13 @@ export class BrowserAdbClient {
   }
 
   /**
-   * Connect to an Android device over WebUSB.
+   * Connect to an Android device over WebUSB with interactive authorization polling.
    * If `targetDevice` is omitted, prompts the user through the standard Chromium chooser.
    */
-  async connect(targetDevice?: AdbDaemonWebUsbDevice): Promise<DeviceProfile> {
+  async connect(
+    targetDevice?: AdbDaemonWebUsbDevice,
+    onPrompt?: (msg: string) => void
+  ): Promise<DeviceProfile> {
     const manager = AdbDaemonWebUsbDeviceManager.BROWSER;
     if (!manager) {
       throw new Error("WebUSB is unavailable in this environment. Please use Google Chrome or Microsoft Edge over HTTPS.");
@@ -289,6 +328,8 @@ export class BrowserAdbClient {
     if (this.adb || this.currentDevice) {
       await this.disconnect(false);
     }
+
+    this.isDisconnectRequested = false;
 
     let device = targetDevice;
     if (!device) {
@@ -342,22 +383,110 @@ export class BrowserAdbClient {
 
     this.currentConnection = connection;
 
-    // Authenticate using persistent IndexedDB credential store
-    try {
-      const transport = await AdbDaemonTransport.authenticate({
-        serial: device.serial,
-        connection,
-        credentialStore: this.credentialStore,
-      });
+    // Helper to broadcast auth prompt requirement to UI
+    const promptMessage = "Please unlock your device and tap 'Allow USB debugging'";
+    const notifyUnauthorized = () => {
+      this.notifyAuthStatus("unauthorized", promptMessage);
+      if (onPrompt) {
+        try {
+          onPrompt(promptMessage);
+        } catch {
+          // ignore
+        }
+      }
+    };
 
-      this.adb = new Adb(transport);
-    } catch (authErr: any) {
-      // Release interface if authentication fails or is rejected on phone
-      await this.disconnect(false);
-      throw new Error(
-        `ADB Authentication failed: ${authErr?.message || "Check your phone screen and tap 'Always allow from this computer'."}`
-      );
+    // Authenticators: uses IndexedDB-backed key store
+    // When public key is transmitted to device, immediately triggers the unauthorized prompt notification
+    const authenticators = [
+      AdbSignatureAuthenticator,
+      async function* (credentialStore: any, getNextRequest: any) {
+        notifyUnauthorized();
+        for await (const packet of AdbPublicKeyAuthenticator(credentialStore, getNextRequest)) {
+          yield packet;
+        }
+      },
+    ];
+
+    let transport: AdbDaemonTransport | null = null;
+    const authStartTime = Date.now();
+    const authTimeoutMs = 90000; // 90 seconds window for operator to unlock and confirm popup
+
+    this.notifyAuthStatus("connecting", "Connecting to device daemon...");
+
+    // Adb.authenticate loop:
+    // Handles unauthorized devices and keeps connection open to poll / await user approval
+    while (!transport && !this.isDisconnectRequested) {
+      if (Date.now() - authStartTime > authTimeoutMs) {
+        await this.disconnect(false);
+        throw new Error(
+          "ADB Authentication timed out. Please unlock your phone screen, enable USB debugging, and tap 'Allow USB debugging'."
+        );
+      }
+
+      try {
+        const candidateTransport = await AdbDaemonTransport.authenticate({
+          serial: device.serial,
+          connection,
+          credentialStore: this.credentialStore,
+          authenticators,
+          preserveConnection: true,
+        });
+
+        const bannerObj = candidateTransport.banner;
+        const bannerText = `${bannerObj?.product || ""} ${bannerObj?.model || ""} ${bannerObj?.device || ""}`.toLowerCase();
+        const isUnauthorized =
+          bannerText.includes("unauthorized") ||
+          (!bannerObj?.product && !bannerObj?.model && !bannerObj?.device);
+
+        // Handle the case where device reports 'unauthorized' status
+        if (isUnauthorized) {
+          notifyUnauthorized();
+          // Keep connection open; close candidate transport cleanly with preserveConnection: true
+          await candidateTransport.close();
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          continue;
+        }
+
+        // Successfully authenticated & authorized
+        transport = candidateTransport;
+        this.currentTransport = transport;
+        this.notifyAuthStatus("authorized", "Device authorized successfully.");
+        break;
+      } catch (authErr: any) {
+        if (this.isDisconnectRequested) {
+          await this.disconnect(false);
+          throw new Error("Connection cancelled by user.");
+        }
+
+        const errMsg = authErr?.message || String(authErr);
+        const isAuthPending =
+          errMsg.includes("unauthorized") ||
+          errMsg.includes("No authenticator can handle the request") ||
+          errMsg.includes("Connection closed unexpectedly") ||
+          errMsg.includes("Authentication failed");
+
+        // Keep connection open and poll / await user approval on phone popup
+        if (isAuthPending && Date.now() - authStartTime < authTimeoutMs) {
+          notifyUnauthorized();
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          continue;
+        }
+
+        // Non-recoverable error
+        await this.disconnect(false);
+        throw new Error(
+          `ADB Authentication failed: ${authErr?.message || "Check your phone screen and tap 'Always allow from this computer'."}`
+        );
+      }
     }
+
+    if (!transport) {
+      await this.disconnect(false);
+      throw new Error("ADB Authentication failed or was cancelled.");
+    }
+
+    this.adb = new Adb(transport);
 
     // Read device properties
     const [manufacturer, model, androidVersion, sdk] = await Promise.all([
@@ -378,8 +507,11 @@ export class BrowserAdbClient {
 
   /**
    * Safely disconnect and release the WebUSB interface without causing locking or busy errors.
+   * Explicitly calls transport.close() and device.close() / raw.releaseInterface().
    */
   async disconnect(notify = true): Promise<void> {
+    this.isDisconnectRequested = true;
+
     // 1. Stop all active streams (logcat, mirror)
     for (const stopFn of Array.from(this.activeStreams)) {
       try {
@@ -390,7 +522,17 @@ export class BrowserAdbClient {
     }
     this.activeStreams.clear();
 
-    // 2. Close ADB session
+    // 2. Explicitly close transport
+    if (this.currentTransport) {
+      try {
+        await this.currentTransport.close();
+      } catch {
+        // ignore
+      }
+      this.currentTransport = null;
+    }
+
+    // 3. Close ADB instance session (delegates to transport)
     if (this.adb) {
       try {
         await this.adb.close();
@@ -400,25 +542,46 @@ export class BrowserAdbClient {
       this.adb = null;
     }
 
-    // 3. Release WebUSB interface cleanly
-    if (this.currentDevice?.raw) {
-      const raw = this.currentDevice.raw;
+    // 4. Close connection stream handles
+    if (this.currentConnection) {
       try {
-        if (raw.opened) {
-          for (const iface of raw.configuration?.interfaces || []) {
-            if (iface.claimed) {
-              await raw.releaseInterface(iface.interfaceNumber).catch(() => undefined);
-            }
-          }
-          await raw.close().catch(() => undefined);
-        }
+        await this.currentConnection.readable.cancel().catch(() => undefined);
+        await this.currentConnection.writable.close().catch(() => undefined);
       } catch {
-        // device might have already been physically disconnected
+        // ignore
       }
+      this.currentConnection = null;
     }
 
-    this.currentDevice = null;
-    this.currentConnection = null;
+    // 5. Explicitly release WebUSB interfaces and call device.close()
+    if (this.currentDevice) {
+      // Call wrapper device.close() if present
+      if (typeof (this.currentDevice as any).close === "function") {
+        try {
+          await (this.currentDevice as any).close();
+        } catch {
+          // ignore
+        }
+      }
+
+      // Explicitly release USB interface claims on underlying USBDevice and close
+      if (this.currentDevice.raw) {
+        const raw = this.currentDevice.raw;
+        try {
+          if (raw.opened) {
+            for (const iface of raw.configuration?.interfaces || []) {
+              if (iface.claimed) {
+                await raw.releaseInterface(iface.interfaceNumber).catch(() => undefined);
+              }
+            }
+            await raw.close().catch(() => undefined);
+          }
+        } catch {
+          // device might have already been physically detached
+        }
+      }
+      this.currentDevice = null;
+    }
 
     if (notify) {
       this.notifyDisconnect();
