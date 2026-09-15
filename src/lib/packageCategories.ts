@@ -20,6 +20,51 @@ export type AppCategoryId =
   | "other";
 
 export type PackageStatus = "enabled" | "disabled" | "uninstalled";
+export type PackageRawState = "disabled-user" | "not installed" | "enabled";
+
+export interface PackageParsedState {
+  status: PackageStatus;
+  rawState: PackageRawState;
+}
+
+/**
+ * Parses raw package state string (from dumpsys, pm list, or error outputs)
+ * into canonical status and rawState:
+ * - Disabled (`disabled-user`)
+ * - Uninstalled for user 0 (`not installed`)
+ * - Fully enabled (`enabled`)
+ */
+export function parsePackageState(rawStateOrOutput: string): PackageParsedState {
+  const text = (rawStateOrOutput || "").toLowerCase().trim();
+
+  // Check for uninstalled / not installed for user 0
+  if (
+    text.includes("not installed") ||
+    text.includes("not_installed") ||
+    text.includes("installed=false") ||
+    text.includes("uninstalled") ||
+    text.includes("package not found") ||
+    text.includes("unknown package") ||
+    text.includes("is not installed for user")
+  ) {
+    return { status: "uninstalled", rawState: "not installed" };
+  }
+
+  // Check for disabled / disabled-user
+  if (
+    text.includes("disabled-user") ||
+    text.includes("disabled_user") ||
+    text.includes("disabled") ||
+    text.includes("enabled=3") || // COMPONENT_ENABLED_STATE_DISABLED_USER in dumpsys
+    text.includes("enabled=2") || // COMPONENT_ENABLED_STATE_DISABLED
+    text.includes("enabled=4")    // COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED
+  ) {
+    return { status: "disabled", rawState: "disabled-user" };
+  }
+
+  // Default to fully enabled
+  return { status: "enabled", rawState: "enabled" };
+}
 
 export interface AppCategoryInfo {
   id: AppCategoryId;
@@ -39,6 +84,7 @@ export interface CategorizedPackage {
   id: string;
   category: AppCategoryInfo;
   status: PackageStatus;
+  rawState?: PackageRawState;
   hasCommunityContext: boolean;
   list?: string;
   description: string;
@@ -544,25 +590,38 @@ export function classifyPackage(
 
 /**
  * Creates unified CategorizedPackage items joining raw inventory,
- * optional UAD catalog, and enabled/disabled status.
+ * optional UAD catalog, and enabled/disabled/uninstalled status.
  */
 export function buildCategorizedInventory(
   packageIds: string[],
   catalog: CommunityPackage[],
   disabledPackageIds: string[] | Set<string>,
+  uninstalledPackageIds?: string[] | Set<string>,
 ): CategorizedPackage[] {
   const disabledSet = disabledPackageIds instanceof Set ? disabledPackageIds : new Set(disabledPackageIds);
+  const uninstalledSet = uninstalledPackageIds instanceof Set ? uninstalledPackageIds : new Set(uninstalledPackageIds || []);
   const catalogMap = new Map(catalog.map((item) => [item.id, item]));
 
   return packageIds.map((id) => {
     const context = catalogMap.get(id);
     const category = classifyPackage(id, context);
-    const status: PackageStatus = disabledSet.has(id) ? "disabled" : "enabled";
+
+    let status: PackageStatus = "enabled";
+    let rawState: PackageRawState = "enabled";
+
+    if (uninstalledSet.has(id)) {
+      status = "uninstalled";
+      rawState = "not installed";
+    } else if (disabledSet.has(id)) {
+      status = "disabled";
+      rawState = "disabled-user";
+    }
 
     return {
       id,
       category,
       status,
+      rawState,
       hasCommunityContext: Boolean(context),
       list: context?.list || (category.id === "oem" ? "OEM" : category.id === "google" ? "Google" : category.id === "system" ? "AOSP" : "Installed"),
       description: context?.description || (category.description),
@@ -631,12 +690,14 @@ export interface CategorySummaryStats {
   total: number;
   enabled: number;
   disabled: number;
+  uninstalled: number;
   recommended: number;
   categories: Array<{
     category: AppCategoryInfo;
     count: number;
     enabledCount: number;
     disabledCount: number;
+    uninstalledCount: number;
     recommendedCount: number;
   }>;
   counts: Record<AppCategoryId, number>;
@@ -645,12 +706,13 @@ export interface CategorySummaryStats {
     count: number;
     enabledCount: number;
     disabledCount: number;
+    uninstalledCount: number;
     recommendedCount: number;
   }>;
 }
 
 /**
- * Computes category distribution and enabled/disabled counts across packages.
+ * Computes category distribution and enabled/disabled/uninstalled counts across packages.
  */
 export function calculateCategoryStats(packages: CategorizedPackage[]): CategorySummaryStats {
   const map = new Map<AppCategoryId, {
@@ -658,6 +720,7 @@ export function calculateCategoryStats(packages: CategorizedPackage[]): Category
     count: number;
     enabledCount: number;
     disabledCount: number;
+    uninstalledCount: number;
     recommendedCount: number;
   }>();
 
@@ -667,12 +730,14 @@ export function calculateCategoryStats(packages: CategorizedPackage[]): Category
       count: 0,
       enabledCount: 0,
       disabledCount: 0,
+      uninstalledCount: 0,
       recommendedCount: 0,
     });
   });
 
   let totalEnabled = 0;
   let totalDisabled = 0;
+  let totalUninstalled = 0;
   let totalRecommended = 0;
 
   packages.forEach((pkg) => {
@@ -681,11 +746,15 @@ export function calculateCategoryStats(packages: CategorizedPackage[]): Category
       count: 0,
       enabledCount: 0,
       disabledCount: 0,
+      uninstalledCount: 0,
       recommendedCount: 0,
     };
 
     entry.count += 1;
-    if (pkg.status === "disabled") {
+    if (pkg.status === "uninstalled") {
+      entry.uninstalledCount = (entry.uninstalledCount || 0) + 1;
+      totalUninstalled += 1;
+    } else if (pkg.status === "disabled") {
       entry.disabledCount += 1;
       totalDisabled += 1;
     } else {
@@ -717,6 +786,7 @@ export function calculateCategoryStats(packages: CategorizedPackage[]): Category
     total: packages.length,
     enabled: totalEnabled,
     disabled: totalDisabled,
+    uninstalled: totalUninstalled,
     recommended: totalRecommended,
     categories,
     counts,

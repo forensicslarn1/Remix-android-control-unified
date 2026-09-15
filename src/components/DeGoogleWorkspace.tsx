@@ -4,9 +4,10 @@
  */
 import { Button } from "@/components/ui/button";
 import { DEGOOGLE_LEVELS, deGoogleCandidatesFor, detectOemProfile, getAlternativeMinimumAndroid, getOemProfile, OEM_PROFILES, type AlternativeIcon, type DeGoogleCandidate, type DeGoogleLevel, type OemProfile } from "@/lib/degoogleCatalog";
-import { AppCategoryBadge, PackageStatusBadge } from "./AppCategoryBadge";
+import { AppCategoryBadge, PackageStatusBadge, DebloatExecutionBadge } from "./AppCategoryBadge";
 import { classifyPackage } from "@/lib/packageCategories";
-import { Archive, ArrowRight, BookmarkCheck, BookmarkPlus, Check, CircleAlert, Cloud, ExternalLink, Eye, Feather, FileText, FolderOpen, Image, ListChecks, Mail, MapPinned, MessageSquare, Music2, PackageOpen, Search, ShieldAlert, ShieldCheck, Store, Trash2, Undo2, Video } from "lucide-react";
+import { DEBLOAT_EXECUTION_LEVELS, type DebloatExecutionLevel } from "@/lib/adbClient";
+import { AlertTriangle, Archive, ArrowRight, BookmarkCheck, BookmarkPlus, Check, CheckSquare, CircleAlert, Cloud, ExternalLink, Eye, Feather, FileText, FolderOpen, Image, ListChecks, Mail, MapPinned, MessageSquare, Music2, PackageOpen, Search, ShieldAlert, ShieldCheck, Store, Trash2, Undo2, Video, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 type Language = "en" | "ar" | "other";
@@ -18,10 +19,11 @@ type Props = {
   isLive: boolean;
   packages: string[];
   disabledPackages?: string[];
+  uninstalledPackages?: string[];
   manufacturer?: string;
   model?: string;
   androidVersion?: string;
-  disablePackage: (id: string, label: string) => Promise<boolean>;
+  disablePackage: (id: string, label: string, level?: DebloatExecutionLevel) => Promise<boolean>;
   openSetup: () => void;
 };
 
@@ -84,13 +86,16 @@ function AlternativeGlyph({ icon }: { icon: AlternativeIcon }) {
   return <Search {...props} />;
 }
 
-export function DeGoogleWorkspace({ language, isLive, packages, disabledPackages, manufacturer, model, androidVersion, disablePackage, openSetup, exportFavorites }: Props & { exportFavorites: (favorites: FavoriteAlternative[]) => void }) {
+export function DeGoogleWorkspace({ language, isLive, packages, disabledPackages, uninstalledPackages, manufacturer, model, androidVersion, disablePackage, openSetup, exportFavorites }: Props & { exportFavorites: (favorites: FavoriteAlternative[]) => void }) {
   const ar = language === "ar";
   const [level, setLevel] = useState<DeGoogleLevel>("essential");
+  const [executionLevel, setExecutionLevel] = useState<DebloatExecutionLevel>("safe");
   const [stage, setStage] = useState<Stage>("level");
   const [confirmed, setConfirmed] = useState(false);
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState<string[]>([]);
+  const [expertConfirmOpen, setExpertConfirmOpen] = useState(false);
+  const [expertCheckbox, setExpertCheckbox] = useState(false);
   const [profileChoice, setProfileChoice] = useState<"auto" | OemProfile["id"]>("auto");
   const [alternativeQuery, setAlternativeQuery] = useState("");
   const [alternativeCategory, setAlternativeCategory] = useState("all");
@@ -104,11 +109,31 @@ export function DeGoogleWorkspace({ language, isLive, packages, disabledPackages
 
   const text = ar ? {
     eyebrow: "خصوصية الجهاز / Google", title: "De‑Google", subtitle: "راجع خدمات Google المثبتة على هذا الجهاز قبل تعطيل أي شيء.",
-    noDevice: "صِل جهازاً أولاً لحساب الحزم المطابقة من جرده المحلي.", choose: "اختر مستوى إزالة Google. المستويات الأعلى توسع المراجعة، لكن مكونات الإطار الأساسية لا تنفذ بشكل جماعي.", selected: "المستوى المحدد", continue: "متابعة إلى المعاينة", preview: "معاينة الجهاز", previewText: "هذه الحزم موجودة بالفعل على الجهاز المتصل. لا تطبق اللوحة عدادات ثابتة أو قائمة عامة على كل هاتف.", noMatches: "لا توجد حزم مرشحة من هذا المستوى في الجرد المحلي الحالي.", reversible: "تعطيل قابل للاستعادة للمستخدم 0", review: "يتطلب مراجعة خبيرة", acknowledge: "أفهم أن تعطيل تطبيقات المستخدم 0 قد يغير التكاملات أو التطبيقات التابعة للشركة.", apply: "تعطيل الحزم القابلة للاستعادة", alternatives: "البدائل", alternativesText: "هذه روابط انتقال يختارها المستخدم. لا يتم تنزيل أو تثبيت أي تطبيق تلقائياً.", return: "العودة إلى المستويات", inspect: "افتح إعداد الاتصال", complete: "تم تسجيل التغييرات", completeText: "أضيفت كل نتيجة إلى سجل الأوامر المحلي مع مسار استعادة عند توفره.", profile: "ملف الشركة المصنعة", auto: "تلقائي من الجهاز", profileContext: "سياق الحماية", model: "الطراز", search: "ابحث في البدائل", allCategories: "كل الفئات", compatible: "متوافق الآن", unknown: "الحد الأدنى غير متحقق", requires: "يتطلب Android", currentAndroid: "Android للجهاز", noResults: "لا توجد بدائل مطابقة لهذه المرشحات.", direct: "فتح الرابط المباشر", guard: "حاجز OEM", noBulk: "لا تنفيذ جماعي", restore: "قابل للاستعادة", favorites: "المفضلة", save: "حفظ للمفضلة", saved: "محفوظ", remove: "إزالة", clear: "مسح المفضلة", shortlist: "قائمة انتقال محفوظة", shortlistText: "تبقى هذه القائمة في هذا المتصفح فقط. افتح الروابط بنفسك عند جاهزيتك.", noFavorites: "لم تحفظ بدائل بعد.",
+    noDevice: "صِل جهازاً أولاً لحساب الحزم المطابقة من جرده المحلي.", choose: "اختر مستوى إزالة Google. المستويات الأعلى توسع المراجعة، لكن مكونات الإطار الأساسية لا تنفذ بشكل جماعي.", selected: "المستوى المحدد", continue: "متابعة إلى المعاينة", preview: "معاينة الجهاز", previewText: "هذه الحزم موجودة بالفعل على الجهاز المتصل. لا تطبق اللوحة عدادات ثابتة أو قائمة عامة على كل هاتف.", noMatches: "لا توجد حزم مرشحة من هذا المستوى في الجرد المحلي الحالي.", reversible: "إجراءات قابلة للتنفيذ للمستخدم 0", review: "يتطلب مراجعة خبيرة", acknowledge: "أفهم أن تعديل تطبيقات المستخدم 0 قد يغير التكاملات أو التطبيقات التابعة للشركة.", apply: "تنفيذ حزم De-Google", alternatives: "البدائل", alternativesText: "هذه روابط انتقال يختارها المستخدم. لا يتم تنزيل أو تثبيت أي تطبيق تلقائياً.", return: "العودة إلى المستويات", inspect: "افتح إعداد الاتصال", complete: "تم تسجيل التغييرات", completeText: "أضيفت كل نتيجة إلى سجل الأوامر المحلي مع مسار استعادة عند توفره.", profile: "ملف الشركة المصنعة", auto: "تلقائي من الجهاز", profileContext: "سياق الحماية", model: "الطراز", search: "ابحث في البدائل", allCategories: "كل الفئات", compatible: "متوافق الآن", unknown: "الحد الأدنى غير متحقق", requires: "يتطلب Android", currentAndroid: "Android للجهاز", noResults: "لا توجد بدائل مطابقة لهذه المرشحات.", direct: "فتح الرابط المباشر", guard: "حاجز OEM", noBulk: "لا تنفيذ جماعي", restore: "الاستعادة", favorites: "المفضلة", save: "حفظ للمفضلة", saved: "محفوظ", remove: "إزالة", clear: "مسح المفضلة", shortlist: "قائمة انتقال محفوظة", shortlistText: "تبقى هذه القائمة في هذا المتصفح فقط. افتح الروابط بنفسك عند جاهزيتك.", noFavorites: "لم تحفظ بدائل بعد.",
+    execLevelLabel: "مستوى تنفيذ إجراء الإزالة (Debloat Action Level)",
+    execSafe: "Safe (Disable) · آمن",
+    execAdvanced: "Advanced (Uninstall & Keep Data) · متقدم",
+    execExpert: "Expert (Full Purge) · خبير (مسح كامل)",
+    expertWarningTitle: "تحذير عالي الخطورة: وضع الخبير (إزالة كاملة)",
+    expertWarningText: "تحذير: في وضع الخبير، سيتم مسح جميع بيانات التطبيقات المحلية وذاكرة التخزين المؤقت والحسابات بشكل نهائي!",
+    expertWarningDetail: "يتم تشغيل: pm uninstall --user 0. يتم حذف بيانات التطبيقات نهائياً، واستعادة الحزمة لاحقاً تسترجع ملف APK فقط دون البيانات.",
+    expertConfirmTitle: "تأكيد الإزالة الكاملة (Expert Full Purge)",
+    expertAckCheckbox: "أفهم وأؤكد أن جميع بيانات التطبيقات المحلية وذاكرة التخزين المؤقت والحسابات سيتم مسحها نهائياً.",
+    confirmPurgeBtn: "تأكيد وتنفيذ الإزالة الكاملة",
     essential: ["أساسي", "لا تغييرات مجمعة", "يوجهك إلى فحوصات الخصوصية ولا يعطل برامج Google."], low: ["منخفض", "تطبيقات غير أساسية", "كتب وأخبار ووسائط واشتراكات Google عند وجودها."], medium: ["متوسط", "تطبيقات قابلة للاستبدال", "البريد والخرائط والصور والسحابة والفيديو قد تتوقف."], high: ["مرتفع", "خدمات مرتبطة بالنظام", "يعرض البحث والمساعد والمراسلة للمراجعة فقط."], total: ["كامل", "مكونات أساسية", "تظل Play services والإطار والمتجر للمراجعة الخبيرة فقط."],
   } : {
     eyebrow: "Device privacy / Google", title: "De‑Google", subtitle: "Review Google services installed on this device before disabling anything.",
-    noDevice: "Connect a device first to calculate matching packages from its local inventory.", choose: "Choose a De-Google level. Higher levels widen the review, but core framework components are never bulk-executed.", selected: "Selected level", continue: "Continue to preview", preview: "Device preview", previewText: "These packages are actually present on the connected device. The desk never applies fixed counts or a generic list to every phone.", noMatches: "No candidates from this level appear in the current local inventory.", reversible: "Reversible User 0 disablement", review: "Expert review required", acknowledge: "I understand disabling User 0 apps can change vendor integrations or dependent apps.", apply: "Disable reversible packages", alternatives: "Alternatives", alternativesText: "These are user-chosen transition links. No app is downloaded or installed automatically.", return: "Return to levels", inspect: "Open connection setup", complete: "Changes recorded", completeText: "Every result was added to the local command ledger with a restore path where Android permits it.", profile: "OEM profile", auto: "Auto-detect from device", profileContext: "Protection context", model: "Model", search: "Search alternatives", allCategories: "All categories", compatible: "Compatible now", unknown: "Minimum not verified", requires: "Requires Android", currentAndroid: "Device Android", noResults: "No alternatives match these filters.", direct: "Open direct link", guard: "OEM guard", noBulk: "no bulk action", restore: "reversible", favorites: "Favorites", save: "Save to favorites", saved: "Saved", remove: "Remove", clear: "Clear favorites", shortlist: "Saved migration shortlist", shortlistText: "This list stays in this browser only. Open links yourself when you are ready.", noFavorites: "No alternatives are saved yet.",
+    noDevice: "Connect a device first to calculate matching packages from its local inventory.", choose: "Choose a De-Google level. Higher levels widen the review, but core framework components are never bulk-executed.", selected: "Selected level", continue: "Continue to preview", preview: "Device preview", previewText: "These packages are actually present on the connected device. The desk never applies fixed counts or a generic list to every phone.", noMatches: "No candidates from this level appear in the current local inventory.", reversible: "Executable User 0 Actions", review: "Expert review required", acknowledge: "I understand modifying User 0 apps can change vendor integrations or dependent apps.", apply: "Apply De-Google packages", alternatives: "Alternatives", alternativesText: "These are user-chosen transition links. No app is downloaded or installed automatically.", return: "Return to levels", inspect: "Open connection setup", complete: "Changes recorded", completeText: "Every result was added to the local command ledger with a restore path where Android permits it.", profile: "OEM profile", auto: "Auto-detect from device", profileContext: "Protection context", model: "Model", search: "Search alternatives", allCategories: "All categories", compatible: "Compatible now", unknown: "Minimum not verified", requires: "Requires Android", currentAndroid: "Device Android", noResults: "No alternatives match these filters.", direct: "Open direct link", guard: "OEM guard", noBulk: "no bulk action", restore: "Restore", favorites: "Favorites", save: "Save to favorites", saved: "Saved", remove: "Remove", clear: "Clear favorites", shortlist: "Saved migration shortlist", shortlistText: "This list stays in this browser only. Open links yourself when you are ready.", noFavorites: "No alternatives are saved yet.",
+    execLevelLabel: "Debloat Execution Level",
+    execSafe: "Safe (Disable)",
+    execAdvanced: "Advanced (Uninstall & Keep Data)",
+    execExpert: "Expert (Full Purge)",
+    expertWarningTitle: "High Risk Warning: Expert Mode (Full Purge)",
+    expertWarningText: "WARNING: In Expert mode, all local application data, caches, and accounts will be permanently erased!",
+    expertWarningDetail: "Executes: pm uninstall --user 0. Deletes user directories in /data/user/0 permanently. Reinstalling later will restore the APK binary, but NOT user data.",
+    expertConfirmTitle: "Confirm Expert Full Purge",
+    expertAckCheckbox: "I understand that all local application data, caches, and accounts will be permanently erased.",
+    confirmPurgeBtn: "Confirm & Execute Purge",
     essential: ["Essential", "No batch changes", "Directs you to privacy checks and does not disable Google apps."], low: ["Low", "Non-essential apps", "Books, news, media, and subscription apps when present."], medium: ["Medium", "Replaceable user apps", "Mail, maps, photos, cloud, and video can stop working."], high: ["High", "System-adjacent services", "Shows search, assistant, and messaging for review only."], total: ["Total", "Core components", "Play services, framework, and store remain expert-review only."],
   };
 
@@ -139,23 +164,48 @@ export function DeGoogleWorkspace({ language, isLive, packages, disabledPackages
   };
   const isFavorite = (id: string) => favorites.some((favorite) => favorite.id === id);
   const selectLevel = (next: DeGoogleLevel) => { setLevel(next); setConfirmed(false); setCompleted([]); };
-  const applyReversible = async () => {
-    if (!confirmed || !reversible.length) return;
+
+  const runApply = async () => {
     setRunning(true);
     const applied: string[] = [];
-    for (const candidate of reversible) if (await disablePackage(candidate.id, `${ar ? "تعطيل De‑Google" : "De‑Google disabled"}: ${candidate.name}`)) applied.push(candidate.id);
+    for (const candidate of reversible) {
+      if (await disablePackage(candidate.id, `${ar ? "تنفيذ De‑Google" : "De‑Google action"}: ${candidate.name} (${executionLevel})`, executionLevel)) {
+        applied.push(candidate.id);
+      }
+    }
     setCompleted(applied);
     setRunning(false);
     setStage("completed");
+    setExpertConfirmOpen(false);
+    setExpertCheckbox(false);
   };
+
+  const handleApplyClick = () => {
+    if (!confirmed || !reversible.length) return;
+    if (executionLevel === "expert") {
+      setExpertConfirmOpen(true);
+    } else {
+      void runApply();
+    }
+  };
+
   const compatibilityLabel = (minimum?: number) => {
     if (minimum === undefined) return { label: text.unknown, tone: "border-[#d8d1c4] bg-[#f3efe6] text-[#687584] dark:border-[#2f4860] dark:bg-[#1b3048] dark:text-[#c7d3dc]" };
     if (androidMajor === undefined) return { label: `${text.requires} ${minimum}+`, tone: "border-[#d8d1c4] bg-[#f3efe6] text-[#687584] dark:border-[#2f4860] dark:bg-[#1b3048] dark:text-[#c7d3dc]" };
     return androidMajor >= minimum ? { label: `${text.compatible} · Android ${androidMajor}`, tone: "border-[#b9da71] bg-[#eef8cd] text-[#527321]" } : { label: `${text.requires} ${minimum}+`, tone: "border-[#dba193] bg-[#fbe5df] text-[#934639]" };
   };
+
   const packageCard = (candidate: DeGoogleCandidate, mode: "reversible" | "review") => {
+    const isPkgUninstalled = uninstalledPackages?.includes(candidate.id);
     const isPkgDisabled = disabledPackages?.includes(candidate.id);
+    const pkgStatus = isPkgUninstalled ? "uninstalled" : isPkgDisabled ? "disabled" : "enabled";
+    const rawState = isPkgUninstalled ? "not installed" : isPkgDisabled ? "disabled-user" : "enabled";
     const pkgCategory = classifyPackage(candidate.id);
+
+    const execConfig = DEBLOAT_EXECUTION_LEVELS[executionLevel];
+    const execCmd = execConfig.commandTemplate(candidate.id);
+    const restoreCmd = execConfig.restoreCommandTemplate(candidate.id);
+
     return (
       <article key={candidate.id} className="border border-[#d8d1c4] bg-[#fffdf8] p-4 dark:border-[#2f4860] dark:bg-[#14253a]">
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
@@ -164,7 +214,7 @@ export function DeGoogleWorkspace({ language, isLive, packages, disabledPackages
               <PackageOpen size={16} className={mode === "review" ? "text-[#934639]" : "text-[#527321]"} />
               <h4 className="text-sm font-bold">{candidate.name}</h4>
               <AppCategoryBadge category={pkgCategory} language={language} short={true} />
-              <PackageStatusBadge status={isPkgDisabled ? "disabled" : "enabled"} language={language} />
+              <PackageStatusBadge status={pkgStatus} rawState={rawState} language={language} />
               <span className="status-stamp scale-90 origin-left text-[#59869c]">{candidate.group}</span>
             </div>
             <p className="mono mt-2 break-all text-[0.67rem] text-[#526273] dark:text-[#c7d3dc]">{candidate.id}</p>
@@ -172,16 +222,20 @@ export function DeGoogleWorkspace({ language, isLive, packages, disabledPackages
               <p className="mt-2 text-xs text-[#526273] dark:text-[#c7d3dc]">{candidate.alternatives.map((item) => item.name).join(" · ")}</p>
             ) : null}
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {candidate.profileGuard ? <span className="status-stamp text-[#934639]">{text.guard}</span> : null}
             <span className={`status-stamp ${mode === "review" ? "text-[#934639]" : "text-[#527321]"}`}>{mode === "review" ? text.noBulk : text.restore}</span>
           </div>
         </div>
         {mode === "reversible" ? (
           <div className="mono mt-3 border-l-2 border-[#c8f04a] bg-[#f3efe6] px-3 py-2 text-[0.63rem] text-[#263d55] dark:bg-[#1b3048] dark:text-[#d7e0e8]">
-            pm disable-user --user 0 {candidate.id}
-            <br />
-            restore → cmd package install-existing --user 0 {candidate.id}
+            <div className="flex items-center gap-2 font-semibold">
+              <span className="text-[#14253a] dark:text-[#c8f04a]">{execCmd}</span>
+              <DebloatExecutionBadge level={executionLevel} language={language} />
+            </div>
+            <div className="mt-1 text-[#526273] dark:text-[#a6b3be]">
+              {text.restore} → {restoreCmd}
+            </div>
           </div>
         ) : null}
       </article>
@@ -197,7 +251,229 @@ export function DeGoogleWorkspace({ language, isLive, packages, disabledPackages
 
     {stage === "level" ? <div className="space-y-4"><div><p className="kicker text-[#687584]">{text.selected}</p><h3 className="mt-1 text-2xl font-bold tracking-[-0.04em]">{text.choose}</h3></div><div className="grid gap-3">{DEGOOGLE_LEVELS.map(({ id }) => { const [name, summary, warning] = getLevelCopy(id); const count = isLive ? deGoogleCandidatesFor(id, packages, activeProfile).length : null; const chosen = level === id; return <button key={id} onClick={() => selectLevel(id)} className={`action-button text-left ${chosen ? "ring-2 ring-[#c8f04a]" : ""}`}><div className="service-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><div className={`grid h-10 w-10 shrink-0 place-items-center border ${levelTone[id]}`}><Feather size={18} /></div><div><div className="flex flex-wrap items-center gap-2"><h4 className="font-bold">{name}</h4><span className={`status-stamp scale-90 origin-left ${levelTone[id]}`}>{count === null ? "—" : count} {ar ? "حزمة مطابقة" : "matching packages"}</span></div><p className="mt-1 text-sm text-[#526273] dark:text-[#c7d3dc]">{summary}</p><p className={`mt-2 text-xs leading-5 ${id === "high" || id === "total" ? "text-[#934639] dark:text-[#f1a38e]" : "text-[#687584] dark:text-[#a6b3be]"}`}>⚠ {warning}</p></div></div><span className={`grid h-6 w-6 place-items-center rounded-full border ${chosen ? "border-[#527321] bg-[#eef8cd] text-[#527321]" : "border-[#d8d1c4] text-transparent"}`}>{chosen ? <Check size={14} /> : null}</span></div></button>; })}</div><div className="flex justify-end"><Button onClick={() => setStage("preview")} disabled={!isLive} className="action-button bg-[#14253a] text-[#f6f2ea] hover:bg-[#223952]"><Eye className="mr-2" size={16} />{text.continue}<ArrowRight className="ml-2" size={16} /></Button></div></div> : null}
 
-    {stage === "preview" ? <div className="space-y-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="kicker text-[#687584]">{androidMajor ? `${text.currentAndroid} ${androidMajor}` : text.preview}</p><h3 className="mt-1 text-2xl font-bold tracking-[-0.04em]">{text.preview} · {getLevelCopy(level)[0]}</h3><p className="mt-2 max-w-3xl text-sm leading-6 text-[#526273] dark:text-[#c7d3dc]">{text.previewText}</p></div><Button variant="outline" onClick={() => setStage("level")} className="action-button border-[#14253a] dark:border-[#d7e0e8]">{text.return}</Button></div>{!candidates.length ? <div className="service-card p-8 text-center"><ShieldCheck className="mx-auto text-[#527321]" size={28} /><p className="mt-3 text-sm text-[#526273] dark:text-[#c7d3dc]">{text.noMatches}</p></div> : <><div className="grid gap-5 lg:grid-cols-2"><div><div className="mb-3 flex items-center gap-2"><Undo2 size={17} className="text-[#527321]" /><h4 className="font-bold">{text.reversible} ({reversible.length})</h4></div><div className="space-y-3">{reversible.map((candidate) => packageCard(candidate, "reversible"))}</div></div><div><div className="mb-3 flex items-center gap-2"><ShieldAlert size={17} className="text-[#934639]" /><h4 className="font-bold">{text.review} ({reviewOnly.length})</h4></div><div className="space-y-3">{reviewOnly.map((candidate) => packageCard(candidate, "review"))}</div></div></div>{reversible.length ? <div className="border border-[#d8d1c4] bg-[#f3efe6] p-4 dark:border-[#2f4860] dark:bg-[#1b3048]"><label className="flex gap-3 text-xs leading-5"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#14253a]" />{text.acknowledge}</label><div className="mt-4 flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={() => setStage("alternatives")} className="action-button border-[#14253a] dark:border-[#d7e0e8]"><Cloud className="mr-2" size={15} />{text.alternatives}</Button><Button onClick={applyReversible} disabled={!confirmed || running} className="action-button bg-[#14253a] text-[#f6f2ea] hover:bg-[#223952]">{running ? "…" : <><ShieldCheck className="mr-2" size={15} />{text.apply}</>}</Button></div></div> : <div className="flex justify-end"><Button onClick={() => setStage("alternatives")} className="action-button bg-[#14253a] text-[#f6f2ea] hover:bg-[#223952]"><Cloud className="mr-2" size={15} />{text.alternatives}</Button></div>}</>}</div> : null}
+    {stage === "preview" ? (
+      <div className="space-y-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="kicker text-[#687584]">{androidMajor ? `${text.currentAndroid} ${androidMajor}` : text.preview}</p>
+            <h3 className="mt-1 text-2xl font-bold tracking-[-0.04em]">{text.preview} · {getLevelCopy(level)[0]}</h3>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-[#526273] dark:text-[#c7d3dc]">{text.previewText}</p>
+          </div>
+          <Button variant="outline" onClick={() => setStage("level")} className="action-button border-[#14253a] dark:border-[#d7e0e8]">
+            {text.return}
+          </Button>
+        </div>
+
+        {/* Action Selector & Level Configuration */}
+        <div className="border border-[#d8d1c4] bg-[#f3efe6] p-4 dark:border-[#2f4860] dark:bg-[#1b3048]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <label htmlFor="degoogle-exec-level-select" className="kicker text-[#59869c]">
+                {text.execLevelLabel}
+              </label>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <select
+                  id="degoogle-exec-level-select"
+                  aria-label={text.execLevelLabel}
+                  value={executionLevel}
+                  onChange={(e) => setExecutionLevel(e.target.value as DebloatExecutionLevel)}
+                  className="h-10 min-w-64 border border-[#14253a] bg-[#fffdf8] px-3 text-xs font-semibold dark:border-[#d7e0e8] dark:bg-[#14253a]"
+                >
+                  <option value="safe">{text.execSafe} — pm disable-user</option>
+                  <option value="advanced">{text.execAdvanced} — pm uninstall -k</option>
+                  <option value="expert">{text.execExpert} — pm uninstall</option>
+                </select>
+                <DebloatExecutionBadge level={executionLevel} language={language} />
+              </div>
+            </div>
+            <div className="text-xs text-[#526273] dark:text-[#c7d3dc] max-w-sm">
+              {executionLevel === "safe" && (
+                <p>{ar ? "أكثر المستويات أماناً: يعطل التطبيق للمستخدم 0 مع الاحتفاظ بجميع بياناته وحساباته." : "Safest: Disables package for User 0, leaving all user data and accounts intact."}</p>
+              )}
+              {executionLevel === "advanced" && (
+                <p>{ar ? "يزيل التطبيق للمستخدم 0 مع تفعيل علم (-k) للاحتفاظ ببيانات التطبيق وذاكرة التخزين." : "Removes binary for User 0 while preserving internal application data and caches (-k flag)."}</p>
+              )}
+              {executionLevel === "expert" && (
+                <p className="text-[#934639] font-semibold dark:text-[#f87171]">{ar ? "إزالة كاملة ومسح نهائي: يمحو جميع الملفات المحلية والحسابات نهائياً!" : "Full purge: Erases application binary, internal data directories, and credentials permanently!"}</p>
+              )}
+            </div>
+          </div>
+
+          {/* High visibility Warning banner when Expert mode is selected */}
+          {executionLevel === "expert" && (
+            <div className="mt-3 border-l-4 border-[#dc2626] bg-[#fdf2f0] p-3.5 text-[#991b1b] dark:border-[#ef4444] dark:bg-[#381111] dark:text-[#fca5a5]">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle size={18} className="mt-0.5 shrink-0 text-[#dc2626]" />
+                <div>
+                  <h5 className="font-bold text-xs">{text.expertWarningTitle}</h5>
+                  <p className="mt-1 text-xs font-bold leading-5 text-[#b91c1c] dark:text-[#f87171]">{text.expertWarningText}</p>
+                  <p className="mt-1 text-[0.7rem] leading-4 opacity-90">{text.expertWarningDetail}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {!candidates.length ? (
+          <div className="service-card p-8 text-center">
+            <ShieldCheck className="mx-auto text-[#527321]" size={28} />
+            <p className="mt-3 text-sm text-[#526273] dark:text-[#c7d3dc]">{text.noMatches}</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid gap-5 lg:grid-cols-2">
+              <div>
+                <div className="mb-3 flex items-center gap-2">
+                  <Undo2 size={17} className="text-[#527321]" />
+                  <h4 className="font-bold">{text.reversible} ({reversible.length})</h4>
+                </div>
+                <div className="space-y-3">{reversible.map((candidate) => packageCard(candidate, "reversible"))}</div>
+              </div>
+              <div>
+                <div className="mb-3 flex items-center gap-2">
+                  <ShieldAlert size={17} className="text-[#934639]" />
+                  <h4 className="font-bold">{text.review} ({reviewOnly.length})</h4>
+                </div>
+                <div className="space-y-3">{reviewOnly.map((candidate) => packageCard(candidate, "review"))}</div>
+              </div>
+            </div>
+
+            {reversible.length ? (
+              <div className="border border-[#d8d1c4] bg-[#f3efe6] p-4 dark:border-[#2f4860] dark:bg-[#1b3048]">
+                <label className="flex gap-3 text-xs leading-5">
+                  <input
+                    type="checkbox"
+                    checked={confirmed}
+                    onChange={(event) => setConfirmed(event.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-[#14253a]"
+                  />
+                  {text.acknowledge}
+                </label>
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
+                  <Button variant="outline" onClick={() => setStage("alternatives")} className="action-button border-[#14253a] dark:border-[#d7e0e8]">
+                    <Cloud className="mr-2" size={15} />{text.alternatives}
+                  </Button>
+                  <Button
+                    onClick={handleApplyClick}
+                    disabled={!confirmed || running}
+                    className={`action-button ${executionLevel === "expert" ? "bg-[#b91c1c] text-white hover:bg-[#991b1b]" : "bg-[#14253a] text-[#f6f2ea] hover:bg-[#223952]"}`}
+                  >
+                    {running ? "…" : (
+                      <>
+                        <ShieldCheck className="mr-2" size={15} />
+                        {text.apply} ({reversible.length})
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex justify-end">
+                <Button onClick={() => setStage("alternatives")} className="action-button bg-[#14253a] text-[#f6f2ea] hover:bg-[#223952]">
+                  <Cloud className="mr-2" size={15} />{text.alternatives}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Expert Confirmation Modal Dialog */}
+        {expertConfirmOpen && (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-[#14253a]/60 p-4 backdrop-blur-xs">
+            <div className="w-full max-w-xl border-2 border-[#b91c1c] bg-[#fffdf8] shadow-2xl p-6 dark:bg-[#14253a]">
+              <div className="flex items-start justify-between border-b border-[#d8d1c4] pb-4 dark:border-[#2f4860]">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fdf2f0] text-[#dc2626] dark:bg-[#451212]">
+                    <AlertTriangle size={22} />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold tracking-[-0.03em] text-[#991b1b] dark:text-[#f87171]">
+                      {text.expertConfirmTitle}
+                    </h3>
+                    <div className="mt-1">
+                      <DebloatExecutionBadge level="expert" language={language} />
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setExpertConfirmOpen(false)}
+                  className="p-1 text-[#687584] hover:text-[#14253a] dark:text-[#c7d3dc]"
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Warning box */}
+              <div className="mt-4 border-l-4 border-[#dc2626] bg-[#fdf2f0] p-3 text-xs text-[#991b1b] dark:bg-[#381111] dark:text-[#fca5a5]">
+                <p className="font-bold text-sm">
+                  {text.expertWarningText}
+                </p>
+                <p className="mt-2 leading-5">
+                  {ar
+                    ? "سيتم تنفيذ أمر 'pm uninstall --user 0' على كل حزمة. سيتم حذف جميع قواعد البيانات المحلية، وملفات تعريف الجلسات، وسجلات الدخول نهائياً من دليل المستخدم."
+                    : "Executing 'pm uninstall --user 0' permanently deletes all application caches, shared preferences, accounts, and SQLite databases from /data/user/0."}
+                </p>
+              </div>
+
+              {/* Package list preview */}
+              <div className="mt-4">
+                <p className="text-xs font-semibold text-[#526273] dark:text-[#c7d3dc]">
+                  {ar ? "الحزم المستهدفة للتطهير الكامل:" : "Target packages for full purge:"} ({reversible.length})
+                </p>
+                <div className="mt-2 max-h-36 overflow-y-auto space-y-1.5 border border-[#d8d1c4] bg-[#f3efe6] p-2 dark:border-[#2f4860] dark:bg-[#1b3048]">
+                  {reversible.map((cand) => (
+                    <div key={cand.id} className="mono text-[0.68rem] flex items-center justify-between gap-2 text-[#263d55] dark:text-[#d7e0e8]">
+                      <span className="truncate font-semibold">{cand.id}</span>
+                      <span className="text-[#934639] shrink-0">pm uninstall --user 0</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Checkbox confirmation */}
+              <div className="mt-4 border border-[#dba193] bg-[#fff8f6] p-3 dark:border-[#7f1d1d] dark:bg-[#2c1212]">
+                <label className="flex items-start gap-2.5 text-xs font-semibold leading-5 text-[#934639] dark:text-[#fca5a5] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={expertCheckbox}
+                    onChange={(e) => setExpertCheckbox(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-[#b91c1c]"
+                  />
+                  <span>{text.expertAckCheckbox}</span>
+                </label>
+              </div>
+
+              {/* Buttons */}
+              <div className="mt-6 flex justify-end gap-2 border-t border-[#d8d1c4] pt-4 dark:border-[#2f4860]">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setExpertConfirmOpen(false);
+                    setExpertCheckbox(false);
+                  }}
+                  className="action-button border-[#14253a] text-xs dark:border-[#d7e0e8]"
+                >
+                  {text.return}
+                </Button>
+                <Button
+                  onClick={runApply}
+                  disabled={!expertCheckbox || running}
+                  className="action-button bg-[#b91c1c] text-white hover:bg-[#991b1b] text-xs font-bold shadow-md"
+                >
+                  {running ? "…" : (
+                    <>
+                      <AlertTriangle size={14} className="mr-1.5" />
+                      {text.confirmPurgeBtn} ({reversible.length})
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    ) : null}
 
     {stage === "alternatives" ? <div className="space-y-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="kicker text-[#687584]">{getLevelCopy(level)[0]}</p><h3 className="mt-1 text-2xl font-bold tracking-[-0.04em]">{text.alternatives}</h3><p className="mt-2 max-w-3xl text-sm leading-6 text-[#526273] dark:text-[#c7d3dc]">{text.alternativesText}</p></div><Button variant="outline" onClick={() => setStage("preview")} className="action-button border-[#14253a] dark:border-[#d7e0e8]">{text.preview}</Button></div>
       <div className="flex flex-wrap items-center justify-between gap-3 border border-[#d8d1c4] bg-[#f3efe6] p-4 dark:border-[#2f4860] dark:bg-[#1b3048]"><div className="flex items-center gap-2"><ListChecks size={17} className="text-[#527321]" /><div><p className="text-sm font-bold">{text.favorites} · {favorites.length}</p><p className="text-xs text-[#526273] dark:text-[#c7d3dc]">{text.shortlistText}</p></div></div><Button variant="outline" onClick={() => setFavoritesOpen((current) => !current)} className="action-button border-[#14253a] dark:border-[#d7e0e8]"><BookmarkCheck className="mr-2" size={15} />{text.shortlist}</Button></div>

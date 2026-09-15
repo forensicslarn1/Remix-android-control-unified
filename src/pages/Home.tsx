@@ -5,7 +5,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/contexts/ThemeContext";
-import { BrowserAdbClient, type CommandResult, type DeviceFile, type DeviceProfile, type MirrorSession } from "@/lib/adbClient";
+import { BrowserAdbClient, DEBLOAT_EXECUTION_LEVELS, type DebloatExecutionLevel, type CommandResult, type DeviceFile, type DeviceProfile, type MirrorSession } from "@/lib/adbClient";
 import { COMMUNITY_SOURCE, fetchCommunityCatalog, type CommunityPackage } from "@/lib/communityCatalog";
 import AboutWorkspace from "@/components/AboutWorkspace";
 import { DeGoogleWorkspace, type FavoriteAlternative } from "@/components/DeGoogleWorkspace";
@@ -20,11 +20,11 @@ import { ShortcutGuideDialog } from "@/components/ShortcutGuideDialog";
 import { WebUsbConnectionManager } from "@/components/WebUsbConnectionManager";
 import { LogcatViewer } from "@/components/LogcatViewer";
 import { createCaseId, exportTimestampedCaseBundle } from "@/lib/caseBundle";
-import { AppWindow, ArrowRight, ArrowUpDown, Bot, Boxes, Check, CheckCircle2, CheckSquare, ChevronRight, CircleAlert, ClipboardCheck, ClipboardList, Cpu, Download, Eye, EyeOff, FileArchive, FileText, Filter, Folder, HardDrive, History, HelpCircle, Info, Keyboard, Languages, Layers, ListFilter, Loader2, LockKeyhole, MonitorUp, Moon, PackageOpen, PauseCircle, PlugZap, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square, TerminalSquare, Unplug, Upload, Usb, UsersRound, Sun, X } from "lucide-react";
+import { AlertTriangle, AppWindow, ArrowRight, ArrowUpDown, Bot, Boxes, Check, CheckCircle2, CheckSquare, ChevronRight, CircleAlert, ClipboardCheck, ClipboardList, Cpu, Download, Eye, EyeOff, FileArchive, FileText, Filter, Folder, HardDrive, History, HelpCircle, Info, Keyboard, Languages, Layers, ListFilter, Loader2, LockKeyhole, MonitorUp, Moon, PackageOpen, PauseCircle, PlugZap, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square, TerminalSquare, Trash2, Unplug, Upload, Usb, UsersRound, Sun, X } from "lucide-react";
 import GeminiChatWorkspace from "@/components/GeminiChatWorkspace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { AppCategoryBadge, PackageStatusBadge, CategoryGlyph } from "@/components/AppCategoryBadge";
+import { AppCategoryBadge, PackageStatusBadge, DebloatExecutionBadge, CategoryGlyph } from "@/components/AppCategoryBadge";
 import { CategoryBreakdown } from "@/components/CategoryBreakdown";
 import {
   APP_CATEGORIES,
@@ -185,6 +185,7 @@ export default function Home() {
   const [root, setRoot] = useState(false);
   const [packages, setPackages] = useState<string[]>([]);
   const [disabledPackages, setDisabledPackages] = useState<string[]>([]);
+  const [uninstalledPackages, setUninstalledPackages] = useState<string[]>([]);
   const [catalog, setCatalog] = useState<CommunityPackage[]>([]);
   const [catalogTime, setCatalogTime] = useState<string | null>(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -192,9 +193,10 @@ export default function Home() {
   const [recommendedOnly, setRecommendedOnly] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
-  const [actionMode, setActionMode] = useState<"disable" | "uninstall" | "restore">("disable");
+  const [actionMode, setActionMode] = useState<DebloatExecutionLevel | "restore">("safe");
+  const [expertAckCheckbox, setExpertAckCheckbox] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<AppCategoryId | "all">("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "disabled">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "enabled" | "disabled" | "uninstalled">("all");
   const [sortBy, setSortBy] = useState<SortCriterion>("category");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [groupByCategory, setGroupByCategory] = useState<boolean>(true);
@@ -218,7 +220,7 @@ export default function Home() {
     current: number;
     total: number;
     currentPkg: string;
-    action: "disable" | "uninstall" | "restore";
+    action: DebloatExecutionLevel | "restore" | "disable" | "uninstall";
     succeeded: string[];
     failed: Array<{ id: string; error: string }>;
     aborted?: boolean;
@@ -242,8 +244,8 @@ export default function Home() {
   };
 
   const categorizedInventory = useMemo(() => {
-    return buildCategorizedInventory(packages, catalog, disabledPackages);
-  }, [packages, catalog, disabledPackages]);
+    return buildCategorizedInventory(packages, catalog, disabledPackages, uninstalledPackages);
+  }, [packages, catalog, disabledPackages, uninstalledPackages]);
 
   const categoryStats = useMemo(() => {
     return calculateCategoryStats(categorizedInventory);
@@ -648,7 +650,9 @@ export default function Home() {
     }
   };
 
-  const executeBulkAction = async (action: "disable" | "uninstall" | "restore", targetIds?: string[]) => {
+  const executeBulkAction = async (actionParam: DebloatExecutionLevel | "restore" | "disable" | "uninstall", targetIds?: string[]) => {
+    const action: DebloatExecutionLevel | "restore" =
+      actionParam === "disable" ? "safe" : actionParam === "uninstall" ? "advanced" : actionParam;
     const list = targetIds || selected;
     if (list.length === 0) {
       toast.error(isArabic ? "لم يتم تحديد أي تطبيقات لتنفيذ العملية." : "No applications selected for bulk operation.");
@@ -687,30 +691,30 @@ export default function Home() {
 
       try {
         let result: CommandResult;
-        if (action === "disable") {
-          result = await adb.current.disablePackage(id);
-          addReceipt(result, `Disabled ${id} for User 0 (bulk)`, "USB", `cmd package install-existing --user 0 ${id}`, false);
+        if (action === "restore") {
+          const isUninstalled = uninstalledPackages.includes(id);
+          result = await adb.current.restorePackage(id, isUninstalled ? "uninstalled" : "disabled");
+          const cmdExecuted = isUninstalled ? `cmd package install-existing ${id}` : `pm enable ${id}`;
+          addReceipt(result, `Restored ${id} for User 0 (bulk)`, "USB", cmdExecuted, false);
           if (result.exitCode === 0) {
             succeededList.push(id);
-            setDisabledPackages((current) => Array.from(new Set([...current, id])));
-          } else {
-            failedList.push({ id, error: result.stderr || "Non-zero exit code" });
-          }
-        } else if (action === "uninstall") {
-          result = await adb.current.uninstallForUser(id);
-          addReceipt(result, `Removed ${id} for User 0 (bulk)`, "USB", `cmd package install-existing --user 0 ${id}`, false);
-          if (result.exitCode === 0) {
-            succeededList.push(id);
-            setDisabledPackages((current) => Array.from(new Set([...current, id])));
+            setDisabledPackages((current) => current.filter((pkgId) => pkgId !== id));
+            setUninstalledPackages((current) => current.filter((pkgId) => pkgId !== id));
           } else {
             failedList.push({ id, error: result.stderr || "Non-zero exit code" });
           }
         } else {
-          result = await adb.current.restorePackage(id);
-          addReceipt(result, `Restored ${id} for User 0 (bulk)`, "USB", undefined, false);
+          result = await adb.current.executeDebloatAction(id, action);
+          const restoreCmd = DEBLOAT_EXECUTION_LEVELS[action].restoreCommandTemplate(id);
+          const label = `${DEBLOAT_EXECUTION_LEVELS[action].label} ${id} (bulk)`;
+          addReceipt(result, label, "USB", restoreCmd, false);
           if (result.exitCode === 0) {
             succeededList.push(id);
-            setDisabledPackages((current) => current.filter((pkgId) => pkgId !== id));
+            if (action === "safe") {
+              setDisabledPackages((current) => Array.from(new Set([...current, id])));
+            } else {
+              setUninstalledPackages((current) => Array.from(new Set([...current, id])));
+            }
           } else {
             failedList.push({ id, error: result.stderr || "Non-zero exit code" });
           }
@@ -760,12 +764,14 @@ export default function Home() {
     await executeBulkAction(actionMode);
   };
 
-  const restore = async (id: string) => {
+  const restore = async (id: string, currentStatus?: PackageStatus | string) => {
     try {
-      const result = await adb.current.restorePackage(id);
-      addReceipt(result, `Attempted restore for ${id}`, "USB");
+      const isUninstalled = currentStatus === "uninstalled" || uninstalledPackages.includes(id);
+      const result = await adb.current.restorePackage(id, isUninstalled ? "uninstalled" : "disabled");
+      addReceipt(result, `Attempted restore for ${id} (state: ${isUninstalled ? "uninstalled" : "disabled"})`, "USB");
       if (result.exitCode === 0) {
         setDisabledPackages((current) => current.filter((pkgId) => pkgId !== id));
+        setUninstalledPackages((current) => current.filter((pkgId) => pkgId !== id));
       }
       toast.success(language === "ar" ? "اكتمل أمر الاستعادة؛ افحص الإيصال لنتيجة الجهاز." : "Restore command completed; inspect its receipt for device output.");
     } catch (error) {
@@ -774,35 +780,51 @@ export default function Home() {
   };
 
   const togglePackageStatus = async (pkg: CategorizedPackage) => {
-    if (pkg.status === "disabled") {
-      await restore(pkg.id);
+    if (pkg.status === "disabled" || pkg.status === "uninstalled") {
+      await restore(pkg.id, pkg.status);
     } else {
+      const levelToRun: DebloatExecutionLevel = actionMode === "restore" ? "safe" : actionMode;
       try {
-        const result = await adb.current.disablePackage(pkg.id);
-        addReceipt(result, `Disabled ${pkg.id} for User 0`, "USB", `cmd package install-existing --user 0 ${pkg.id}`);
+        const result = await adb.current.executeDebloatAction(pkg.id, levelToRun);
+        const restoreCmd = DEBLOAT_EXECUTION_LEVELS[levelToRun].restoreCommandTemplate(pkg.id);
+        addReceipt(result, `${DEBLOAT_EXECUTION_LEVELS[levelToRun].label}: ${pkg.id} for User 0`, "USB", restoreCmd);
         if (result.exitCode === 0) {
-          setDisabledPackages((current) => Array.from(new Set([...current, pkg.id])));
+          if (levelToRun === "safe") {
+            setDisabledPackages((current) => Array.from(new Set([...current, pkg.id])));
+          } else {
+            setUninstalledPackages((current) => Array.from(new Set([...current, pkg.id])));
+          }
+          toast.success(language === "ar" ? `تم تطبيق ${levelToRun} على ${pkg.id}` : `Applied ${levelToRun} on ${pkg.id}`);
+        } else {
+          toast.error(result.stderr || "Command returned non-zero code.");
         }
-        toast.success(language === "ar" ? `تم تعطيل ${pkg.id}` : `Disabled ${pkg.id}`);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Could not change package status.");
       }
     }
   };
 
-  const disableDeGooglePackage = async (id: string, label: string) => {
+  const disableDeGooglePackage = async (id: string, label: string, level: DebloatExecutionLevel = "safe") => {
     try {
-      const result = await adb.current.disablePackage(id);
-      addReceipt(result, label, "USB", `cmd package install-existing --user 0 ${id}`);
+      const result = await adb.current.executeDebloatAction(id, level);
+      const restoreCmd = DEBLOAT_EXECUTION_LEVELS[level].restoreCommandTemplate(id);
+      addReceipt(result, `${DEBLOAT_EXECUTION_LEVELS[level].label}: ${label}`, "USB", restoreCmd);
       if (result.exitCode === 0) {
-        toast.success(language === "ar" ? "تم تسجيل تعطيل قابل للاستعادة." : "Reversible disablement recorded.");
+        if (level === "safe") {
+          setDisabledPackages((current) => Array.from(new Set([...current, id])));
+        } else {
+          setUninstalledPackages((current) => Array.from(new Set([...current, id])));
+        }
+        toast.success(language === "ar" ? "تم تسجيل إجراء De-Google بنجاح." : "Reversible action recorded.");
         return true;
       }
       toast.error(language === "ar" ? "أبلغ أندرويد عن نتيجة غير ناجحة. راجع الإيصال." : "Android reported a non-success result. Review the receipt.");
       return false;
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Package disablement failed.";
-      addReceipt({ command: `pm disable-user --user 0 ${id}`, stdout: "", stderr: detail, exitCode: 1, at: new Date().toISOString() }, label, "USB", `cmd package install-existing --user 0 ${id}`);
+      const detail = error instanceof Error ? error.message : "Package action failed.";
+      const cmd = DEBLOAT_EXECUTION_LEVELS[level].commandTemplate(id);
+      const restoreCmd = DEBLOAT_EXECUTION_LEVELS[level].restoreCommandTemplate(id);
+      addReceipt({ command: cmd, stdout: "", stderr: detail, exitCode: 1, at: new Date().toISOString() }, label, "USB", restoreCmd);
       toast.error(detail);
       return false;
     }
@@ -1220,12 +1242,13 @@ export default function Home() {
                       <span className="mono text-[0.65rem] uppercase text-[#687584] shrink-0">{debloatCopy.status}:</span>
                       <select
                         value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value as "all" | "enabled" | "disabled")}
+                        onChange={(e) => setStatusFilter(e.target.value as "all" | "enabled" | "disabled" | "uninstalled")}
                         className="h-10 w-full border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs outline-none focus:border-[#14253a]"
                       >
                         <option value="all">{debloatCopy.allStatuses} ({categoryStats.total})</option>
                         <option value="enabled">{debloatCopy.enabledOnly} ({categoryStats.enabled})</option>
                         <option value="disabled">{debloatCopy.disabledOnly} ({categoryStats.disabled})</option>
+                        <option value="uninstalled">{isArabic ? "غير المثبتة للمستخدم 0" : "Uninstalled for User 0"} ({categoryStats.uninstalled})</option>
                       </select>
                     </div>
 
@@ -1250,6 +1273,76 @@ export default function Home() {
                       </button>
                     </div>
                   </div>
+
+                  {/* Debloat Execution Level Selector & Badge Header */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#eee7da]">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <label htmlFor="debloat-level-select" className="mono text-[0.68rem] font-bold uppercase tracking-[0.06em] text-[#526273] shrink-0">
+                          {isArabic ? "مستوى التنفيذ:" : "Execution Level:"}
+                        </label>
+                        <select
+                          id="debloat-level-select"
+                          value={actionMode}
+                          onChange={(e) => {
+                            setActionMode(e.target.value as DebloatExecutionLevel | "restore");
+                            setExpertAckCheckbox(false);
+                          }}
+                          className="h-8 border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs font-semibold outline-none focus:border-[#14253a]"
+                        >
+                          <option value="safe">
+                            {isArabic ? "آمن (تعطيل للمستخدم 0)" : "Safe (Disable)"} — pm disable-user
+                          </option>
+                          <option value="advanced">
+                            {isArabic ? "متقدم (إلغاء وإبقاء البيانات)" : "Advanced (Uninstall & Keep Data)"} — pm uninstall -k
+                          </option>
+                          <option value="expert">
+                            {isArabic ? "خبير (إزالة كاملة)" : "Expert (Full Purge)"} — pm uninstall
+                          </option>
+                          <option value="restore">
+                            {isArabic ? "استعادة تكيفية" : "Restore / Re-enable (Adaptive)"}
+                          </option>
+                        </select>
+                      </div>
+
+                      {actionMode !== "restore" ? (
+                        <DebloatExecutionBadge level={actionMode} language={language} />
+                      ) : (
+                        <span className="inline-flex items-center gap-1 border border-[#b9da71] bg-[#eef8cd] px-2 py-0.5 text-[0.65rem] font-semibold text-[#40631b]">
+                          <RotateCcw size={11} className="shrink-0 text-[#4d7c0f]" />
+                          <span>{isArabic ? "استعادة تكيفية" : "Adaptive Restore"}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="mono text-[0.68rem] text-[#687584]">
+                      {categoryStats.uninstalled > 0 && (
+                        <span className="text-[#c2362b] font-semibold mr-2">
+                          {categoryStats.uninstalled} {isArabic ? "تطبيق أزيل للمستخدم 0" : "uninstalled for User 0"} ·
+                        </span>
+                      )}
+                      {visibleCategorizedPackages.length} {debloatCopy.matched} · {selected.length} {debloatCopy.selected}
+                    </div>
+                  </div>
+
+                  {/* Warning banner if Expert mode is active */}
+                  {actionMode === "expert" && (
+                    <div className="flex items-start gap-2.5 border border-[#fca5a5] bg-[#fef2f2] p-3 text-xs text-[#991b1b] rounded-xs mt-1">
+                      <AlertTriangle size={16} className="shrink-0 text-[#dc2626] mt-0.5" />
+                      <div>
+                        <p className="font-bold">
+                          {isArabic
+                            ? "تحذير: في وضع الخبير (إزالة كاملة)، سيتم مسح جميع بيانات التطبيقات المحلية وذاكرة التخزين المؤقت والحسابات بشكل نهائي!"
+                            : "WARNING: In Expert mode, all local application data, caches, and accounts will be permanently erased!"}
+                        </p>
+                        <p className="mt-0.5 text-[0.7rem] opacity-90">
+                          {isArabic
+                            ? "ينفذ: pm uninstall --user 0. يتم حذف أدلة /data/user/0 نهائياً. الاستعادة اللاحقة تعيد ملف APK فقط دون البيانات."
+                            : "Executes: pm uninstall --user 0. Deletes user directories in /data/user/0 permanently. Reinstalling later will restore the APK binary, but NOT user data."}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#eee7da]">
                     <div className="flex items-center gap-4">
@@ -1281,8 +1374,14 @@ export default function Home() {
                       </label>
                     </div>
 
-                    <div className="mono text-[0.68rem] text-[#687584]">
-                      {visibleCategorizedPackages.length} {debloatCopy.matched} · {selected.length} {debloatCopy.selected}
+                    <div className="flex items-center gap-2">
+                      {selected.length > 0 && (
+                        <span className="mono text-xs font-semibold text-[#14253a]">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 border border-[#59869c] bg-[#e8f1f7] text-[#1d5c8a]">
+                            {selected.length} {isArabic ? "محدد" : "selected"}
+                          </span>
+                        </span>
+                      )}
                     </div>
                   </div>
 
@@ -1332,6 +1431,18 @@ export default function Home() {
                       >
                         {isArabic ? "المعطلة" : "Disabled"} ({visibleCategorizedPackages.filter((p) => p.status === "disabled").length})
                       </button>
+                      {categoryStats.uninstalled > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const uninstalledIds = visibleCategorizedPackages.filter((p) => p.status === "uninstalled").map((p) => p.id);
+                            setSelected((current) => Array.from(new Set([...current, ...uninstalledIds])));
+                          }}
+                          className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#fca5a5] bg-[#fff1f1] hover:bg-[#fee2e2] text-[#b91c1c]"
+                        >
+                          {isArabic ? "غير المثبتة" : "Uninstalled"} ({visibleCategorizedPackages.filter((p) => p.status === "uninstalled").length})
+                        </button>
+                      )}
                       {selected.length > 0 && (
                         <button
                           type="button"
@@ -1479,7 +1590,7 @@ export default function Home() {
                                         </p>
                                       </td>
                                       <td className="px-3 py-3.5">
-                                        <PackageStatusBadge status={item.status} language={language} />
+                                        <PackageStatusBadge status={item.status} rawState={item.rawState} language={language} />
                                       </td>
                                       <td className="px-3 py-3.5">
                                         <span className={`inline-flex border px-2 py-0.5 text-[0.63rem] font-semibold uppercase tracking-[0.08em] ${levelTone(item.removal)}`}>
@@ -1497,25 +1608,49 @@ export default function Home() {
                                         )}
                                       </td>
                                       <td className="px-3 py-3.5 text-right">
-                                        {item.status === "disabled" ? (
+                                        {item.status === "disabled" || item.status === "uninstalled" ? (
                                           <Button
                                             variant="outline"
                                             size="sm"
-                                            onClick={() => restore(item.id)}
+                                            onClick={() => restore(item.id, item.status)}
                                             className="action-button h-7 px-2.5 text-xs text-[#527321] border-[#b9da71] hover:bg-[#eef8cd]"
+                                            title={item.status === "uninstalled" ? "cmd package install-existing --user 0" : "pm enable"}
                                           >
                                             <RotateCcw size={12} className="mr-1" />
-                                            {debloatCopy.quickEnable}
+                                            {item.status === "uninstalled"
+                                              ? (isArabic ? "إعادة تثبيت" : "Reinstall")
+                                              : debloatCopy.quickEnable}
                                           </Button>
                                         ) : (
                                           <Button
                                             variant="outline"
                                             size="sm"
                                             onClick={() => togglePackageStatus(item)}
-                                            className="action-button h-7 px-2.5 text-xs text-[#934639] border-[#dba193] hover:bg-[#fbe5df]"
+                                            className={`action-button h-7 px-2.5 text-xs ${
+                                              actionMode === "expert"
+                                                ? "text-[#dc2626] border-[#fca5a5] hover:bg-[#fef2f2]"
+                                                : actionMode === "advanced"
+                                                ? "text-[#ea580c] border-[#fed7aa] hover:bg-[#fff7ed]"
+                                                : "text-[#934639] border-[#dba193] hover:bg-[#fbe5df]"
+                                            }`}
+                                            title={
+                                              actionMode === "expert"
+                                                ? "pm uninstall --user 0 (Purge)"
+                                                : actionMode === "advanced"
+                                                ? "pm uninstall -k --user 0"
+                                                : "pm disable-user --user 0"
+                                            }
                                           >
-                                            <PauseCircle size={12} className="mr-1" />
-                                            {debloatCopy.quickDisable}
+                                            {actionMode === "expert" ? (
+                                              <Trash2 size={12} className="mr-1 text-[#dc2626]" />
+                                            ) : (
+                                              <PauseCircle size={12} className="mr-1" />
+                                            )}
+                                            {actionMode === "expert"
+                                              ? (isArabic ? "إزالة كاملة" : "Purge")
+                                              : actionMode === "advanced"
+                                              ? (isArabic ? "إلغاء الحزمة" : "Uninstall (-k)")
+                                              : debloatCopy.quickDisable}
                                           </Button>
                                         )}
                                       </td>
@@ -1594,7 +1729,7 @@ export default function Home() {
                                   </p>
                                 </td>
                                 <td className="px-3 py-3.5">
-                                  <PackageStatusBadge status={item.status} language={language} />
+                                  <PackageStatusBadge status={item.status} rawState={item.rawState} language={language} />
                                 </td>
                                 <td className="px-3 py-3.5">
                                   <span className={`inline-flex border px-2 py-0.5 text-[0.63rem] font-semibold uppercase tracking-[0.08em] ${levelTone(item.removal)}`}>
@@ -1612,25 +1747,49 @@ export default function Home() {
                                   )}
                                 </td>
                                 <td className="px-3 py-3.5 text-right">
-                                  {item.status === "disabled" ? (
+                                  {item.status === "disabled" || item.status === "uninstalled" ? (
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      onClick={() => restore(item.id)}
+                                      onClick={() => restore(item.id, item.status)}
                                       className="action-button h-7 px-2 text-xs text-[#527321] border-[#b9da71] hover:bg-[#eef8cd]"
+                                      title={item.status === "uninstalled" ? "cmd package install-existing --user 0" : "pm enable"}
                                     >
                                       <RotateCcw size={12} className="mr-1" />
-                                      {debloatCopy.quickEnable}
+                                      {item.status === "uninstalled"
+                                        ? (isArabic ? "إعادة تثبيت" : "Reinstall")
+                                        : debloatCopy.quickEnable}
                                     </Button>
                                   ) : (
                                     <Button
                                       variant="outline"
                                       size="sm"
                                       onClick={() => togglePackageStatus(item)}
-                                      className="action-button h-7 px-2 text-xs text-[#934639] border-[#dba193] hover:bg-[#fbe5df]"
+                                      className={`action-button h-7 px-2 text-xs ${
+                                        actionMode === "expert"
+                                          ? "text-[#dc2626] border-[#fca5a5] hover:bg-[#fef2f2]"
+                                          : actionMode === "advanced"
+                                          ? "text-[#ea580c] border-[#fed7aa] hover:bg-[#fff7ed]"
+                                          : "text-[#934639] border-[#dba193] hover:bg-[#fbe5df]"
+                                      }`}
+                                      title={
+                                        actionMode === "expert"
+                                          ? "pm uninstall --user 0 (Purge)"
+                                          : actionMode === "advanced"
+                                          ? "pm uninstall -k --user 0"
+                                          : "pm disable-user --user 0"
+                                      }
                                     >
-                                      <PauseCircle size={12} className="mr-1" />
-                                      {debloatCopy.quickDisable}
+                                      {actionMode === "expert" ? (
+                                        <Trash2 size={12} className="mr-1 text-[#dc2626]" />
+                                      ) : (
+                                        <PauseCircle size={12} className="mr-1" />
+                                      )}
+                                      {actionMode === "expert"
+                                        ? (isArabic ? "إزالة كاملة" : "Purge")
+                                        : actionMode === "advanced"
+                                        ? (isArabic ? "إلغاء الحزمة" : "Uninstall (-k)")
+                                        : debloatCopy.quickDisable}
                                     </Button>
                                   )}
                                 </td>
@@ -1663,17 +1822,41 @@ export default function Home() {
                     {/* Direct Quick Bulk Action buttons */}
                     {selected.length > 0 && (
                       <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={bulkExecuting}
-                          onClick={() => executeBulkAction("disable")}
-                          className="action-button h-9 text-xs border-[#dba193] text-[#934639] hover:bg-[#fbe5df]"
-                          title={isArabic ? "تعطيل الحزم المحددة للمستخدم 0" : "Disable selected packages for User 0"}
-                        >
-                          <PauseCircle size={14} className="mr-1 text-[#c2362b]" />
-                          {isArabic ? "تعطيل المحدد" : "Disable"} ({selected.length})
-                        </Button>
+                        {actionMode !== "restore" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={bulkExecuting}
+                            onClick={() => executeBulkAction(actionMode)}
+                            className={`action-button h-9 text-xs font-semibold ${
+                              actionMode === "expert"
+                                ? "border-[#fca5a5] text-[#b91c1c] hover:bg-[#fef2f2]"
+                                : actionMode === "advanced"
+                                ? "border-[#fed7aa] text-[#c2410c] hover:bg-[#fff7ed]"
+                                : "border-[#dba193] text-[#934639] hover:bg-[#fbe5df]"
+                            }`}
+                            title={
+                              actionMode === "expert"
+                                ? "pm uninstall --user 0"
+                                : actionMode === "advanced"
+                                ? "pm uninstall -k --user 0"
+                                : "pm disable-user --user 0"
+                            }
+                          >
+                            {actionMode === "expert" ? (
+                              <Trash2 size={14} className="mr-1 text-[#dc2626]" />
+                            ) : (
+                              <PauseCircle size={14} className="mr-1 text-[#c2362b]" />
+                            )}
+                            {actionMode === "expert"
+                              ? (isArabic ? "إزالة كاملة للمحدد" : "Purge Selected")
+                              : actionMode === "advanced"
+                              ? (isArabic ? "إلغاء تثبيت المحدد" : "Uninstall Selected")
+                              : (isArabic ? "تعطيل المحدد" : "Disable Selected")}{" "}
+                            ({selected.length})
+                          </Button>
+                        ) : null}
+
                         <Button
                           size="sm"
                           variant="outline"
@@ -1683,19 +1866,31 @@ export default function Home() {
                           title={isArabic ? "استعادة الحزم المحددة للمستخدم 0" : "Re-enable/Restore selected packages for User 0"}
                         >
                           <RotateCcw size={14} className="mr-1 text-[#527321]" />
-                          {isArabic ? "استعادة المحدد" : "Restore"} ({selected.length})
+                          {isArabic ? "استعادة المحدد" : "Restore Selected"} ({selected.length})
                         </Button>
                       </>
                     )}
 
                     <select
                       value={actionMode}
-                      onChange={(event) => setActionMode(event.target.value as typeof actionMode)}
-                      className="h-9 border border-[#d8d1c4] bg-[#fffdf8] px-2.5 text-xs outline-none focus:border-[#14253a]"
+                      onChange={(event) => {
+                        setActionMode(event.target.value as DebloatExecutionLevel | "restore");
+                        setExpertAckCheckbox(false);
+                      }}
+                      className="h-9 border border-[#d8d1c4] bg-[#fffdf8] px-2.5 text-xs font-semibold outline-none focus:border-[#14253a]"
                     >
-                      <option value="disable">{debloatCopy.disable}</option>
-                      <option value="uninstall">{debloatCopy.uninstall}</option>
-                      <option value="restore">{debloatCopy.restoreMode}</option>
+                      <option value="safe">
+                        {isArabic ? "آمن (تعطيل للمستخدم 0)" : "Safe (Disable)"} — pm disable-user
+                      </option>
+                      <option value="advanced">
+                        {isArabic ? "متقدم (إلغاء وإبقاء البيانات)" : "Advanced (Uninstall & Keep Data)"} — pm uninstall -k
+                      </option>
+                      <option value="expert">
+                        {isArabic ? "خبير (إزالة كاملة)" : "Expert (Full Purge)"} — pm uninstall
+                      </option>
+                      <option value="restore">
+                        {isArabic ? "استعادة تكيفية" : "Restore / Re-enable (Adaptive)"}
+                      </option>
                     </select>
 
                     <Button
@@ -1711,22 +1906,38 @@ export default function Home() {
 
                 {/* Floating Bulk Action Bar when items are selected */}
                 {selected.length > 0 && (
-                  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 border border-[#14253a] bg-[#14253a] text-white px-4 py-2.5 shadow-2xl rounded-xs">
+                  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-2.5 border border-[#14253a] bg-[#14253a] text-white px-4 py-2.5 shadow-2xl rounded-xs">
                     <span className="mono text-xs font-semibold flex items-center gap-1.5 text-[#c8f04a]">
                       <CheckSquare size={14} />
                       {selected.length} {isArabic ? "حزم محددة" : "selected"}
                     </span>
                     <div className="h-4 w-px bg-[#2f4860]" />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={bulkExecuting}
-                      onClick={() => executeBulkAction("disable")}
-                      className="action-button h-7 px-2.5 text-xs border-[#dba193] bg-[#fffdf8] text-[#934639] hover:bg-[#fbe5df]"
-                    >
-                      <PauseCircle size={12} className="mr-1" />
-                      {isArabic ? "تعطيل الكل" : "Disable All"}
-                    </Button>
+                    {actionMode !== "restore" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={bulkExecuting}
+                        onClick={() => executeBulkAction(actionMode)}
+                        className={`action-button h-7 px-2.5 text-xs bg-[#fffdf8] font-semibold ${
+                          actionMode === "expert"
+                            ? "border-[#fca5a5] text-[#b91c1c] hover:bg-[#fee2e2]"
+                            : actionMode === "advanced"
+                            ? "border-[#fed7aa] text-[#c2410c] hover:bg-[#fff7ed]"
+                            : "border-[#dba193] text-[#934639] hover:bg-[#fbe5df]"
+                        }`}
+                      >
+                        {actionMode === "expert" ? (
+                          <Trash2 size={12} className="mr-1 text-[#dc2626]" />
+                        ) : (
+                          <PauseCircle size={12} className="mr-1" />
+                        )}
+                        {actionMode === "expert"
+                          ? (isArabic ? "إزالة كاملة" : "Purge All")
+                          : actionMode === "advanced"
+                          ? (isArabic ? "إلغاء التثبيت" : "Uninstall (-k)")
+                          : (isArabic ? "تعطيل الكل" : "Disable All")}
+                      </Button>
+                    ) : null}
                     <Button
                       size="sm"
                       variant="outline"
@@ -1872,54 +2083,221 @@ export default function Home() {
             {reviewOpen && (
               <div className="fixed inset-0 z-50 grid place-items-center bg-[#14253a]/45 p-4 backdrop-blur-xs">
                 <div className="w-full max-w-2xl border border-[#14253a] bg-[#fffdf8] shadow-2xl">
+                  {/* Header */}
                   <div className="flex items-start justify-between border-b border-[#d8d1c4] p-5">
                     <div>
-                      <p className="kicker text-[#934639]">{debloatCopy.reviewRequired}</p>
-                      <h3 className="mt-1 text-xl font-bold tracking-[-0.04em]">
-                        {actionMode === "disable"
-                          ? debloatCopy.disable
-                          : actionMode === "uninstall"
-                          ? debloatCopy.uninstall
-                          : debloatCopy.restoreMode}{" "}
+                      <div className="flex items-center gap-2">
+                        <p className="kicker text-[#934639]">{debloatCopy.reviewRequired}</p>
+                        {actionMode !== "restore" ? (
+                          <DebloatExecutionBadge level={actionMode} language={language} />
+                        ) : (
+                          <span className="inline-flex items-center border border-[#b9da71] bg-[#eef8cd] px-2 py-0.5 text-[0.68rem] font-bold text-[#527321]">
+                            {isArabic ? "استعادة تكيفية" : "Adaptive Restore"}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="mt-1 text-xl font-bold tracking-[-0.04em] text-[#14253a]">
+                        {actionMode === "safe"
+                          ? (isArabic ? "تعطيل آمن (pm disable-user)" : "Safe Mode (Disable for User 0)")
+                          : actionMode === "advanced"
+                          ? (isArabic ? "إلغاء متقدم مع إبقاء البيانات (pm uninstall -k)" : "Advanced (Uninstall & Keep Data)")
+                          : actionMode === "expert"
+                          ? (isArabic ? "إزالة كاملة وضع الخبير (pm uninstall)" : "Expert Mode (Full Purge)")
+                          : (isArabic ? "استعادة وإعادة تفعيل" : "Restore & Re-enable")}{" "}
                         · {selected.length} {debloatCopy.package}
                       </h3>
                     </div>
-                    <button onClick={() => setReviewOpen(false)} className="p-1 text-[#687584] hover:text-[#14253a]" aria-label="Close dialog">
+                    <button
+                      onClick={() => setReviewOpen(false)}
+                      className="p-1 text-[#687584] hover:text-[#14253a]"
+                      aria-label="Close dialog"
+                    >
                       <X size={19} />
                     </button>
                   </div>
-                  <div className="max-h-[48vh] space-y-2.5 overflow-auto p-5">
-                    {selected.map((id) => (
-                      <div className="border border-[#d8d1c4] p-3 bg-[#fbf9f4]" key={id}>
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="mono text-xs font-semibold">
-                            {actionMode === "disable"
-                              ? `pm disable-user --user 0 ${id}`
-                              : actionMode === "uninstall"
-                              ? `pm uninstall -k --user 0 ${id}`
-                              : `cmd package install-existing --user 0 ${id}`}
-                          </p>
-                          <AppCategoryBadge category={classifyPackage(id)} language={language} short={true} />
-                        </div>
-                        <p className="mt-2 mono text-[0.65rem] text-[#687584]">
-                          {actionMode === "restore"
-                            ? `${debloatCopy.restore}: pm enable ${id}`
-                            : `${debloatCopy.restore}: cmd package install-existing --user 0 ${id}`}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="border-t border-[#d8d1c4] bg-[#fff2e1] p-5">
-                    <div className="flex gap-3">
-                      <CircleAlert size={18} className="mt-0.5 shrink-0 text-[#934639]" />
-                      <p className="text-xs leading-5 text-[#6d3d35]">{debloatCopy.risk}</p>
+
+                  {/* Execution Level Selector inside review modal */}
+                  <div className="border-b border-[#d8d1c4] bg-[#f7f4ed] px-5 py-3 flex flex-wrap items-center justify-between gap-3">
+                    <span className="text-xs font-semibold text-[#526273]">
+                      {isArabic ? "مستوى التنفيذ المطلوب:" : "Desired Execution Level:"}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      {(["safe", "advanced", "expert", "restore"] as const).map((lvl) => {
+                        const isSelected = actionMode === lvl;
+                        return (
+                          <button
+                            key={lvl}
+                            type="button"
+                            onClick={() => {
+                              setActionMode(lvl);
+                              setExpertAckCheckbox(false);
+                            }}
+                            className={`px-2.5 py-1 text-xs font-bold border transition-colors ${
+                              isSelected
+                                ? lvl === "expert"
+                                  ? "bg-[#b91c1c] text-white border-[#b91c1c]"
+                                  : lvl === "advanced"
+                                  ? "bg-[#ea580c] text-white border-[#ea580c]"
+                                  : lvl === "safe"
+                                  ? "bg-[#14253a] text-white border-[#14253a]"
+                                  : "bg-[#527321] text-white border-[#527321]"
+                                : "bg-white text-[#526273] border-[#d8d1c4] hover:bg-[#eae4d5]"
+                            }`}
+                          >
+                            {lvl === "safe"
+                              ? (isArabic ? "آمن" : "Safe")
+                              : lvl === "advanced"
+                              ? (isArabic ? "متقدم" : "Advanced")
+                              : lvl === "expert"
+                              ? (isArabic ? "خبير" : "Expert")
+                              : (isArabic ? "استعادة" : "Restore")}
+                          </button>
+                        );
+                      })}
                     </div>
+                  </div>
+
+                  {/* Package List with Real Command Preview */}
+                  <div className="max-h-[44vh] space-y-2.5 overflow-auto p-5">
+                    {selected.map((id) => {
+                      const isUninstalled = uninstalledPackages.includes(id);
+                      let primaryCmd = "";
+                      let restoreCmd = "";
+
+                      if (actionMode === "safe") {
+                        primaryCmd = `pm disable-user --user 0 ${id}`;
+                        restoreCmd = `pm enable ${id}`;
+                      } else if (actionMode === "advanced") {
+                        primaryCmd = `pm uninstall -k --user 0 ${id}`;
+                        restoreCmd = `cmd package install-existing --user 0 ${id}`;
+                      } else if (actionMode === "expert") {
+                        primaryCmd = `pm uninstall --user 0 ${id}`;
+                        restoreCmd = `cmd package install-existing --user 0 ${id}`;
+                      } else {
+                        primaryCmd = isUninstalled
+                          ? `cmd package install-existing --user 0 ${id}`
+                          : `pm enable ${id}`;
+                        restoreCmd = `pm disable-user --user 0 ${id}`;
+                      }
+
+                      return (
+                        <div
+                          className={`border p-3 ${
+                            actionMode === "expert"
+                              ? "border-[#fca5a5] bg-[#fffafa]"
+                              : "border-[#d8d1c4] bg-[#fbf9f4]"
+                          }`}
+                          key={id}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="mono text-xs font-bold text-[#14253a]">
+                              {primaryCmd}
+                            </p>
+                            <AppCategoryBadge category={classifyPackage(id)} language={language} short={true} />
+                          </div>
+                          <div className="mt-2 flex items-center justify-between gap-2 border-t border-dashed border-[#d8d1c4] pt-1.5">
+                            <p className="mono text-[0.66rem] text-[#687584]">
+                              <span className="font-semibold text-[#527321]">
+                                {isArabic ? "أمر الاستعادة:" : "Restore command:"}
+                              </span>{" "}
+                              {restoreCmd}
+                            </p>
+                            {actionMode === "expert" && (
+                              <span className="text-[0.62rem] text-[#b91c1c] font-semibold">
+                                {isArabic ? "تُمحى البيانات" : "Data erased"}
+                              </span>
+                            )}
+                            {actionMode === "advanced" && (
+                              <span className="text-[0.62rem] text-[#c2410c] font-semibold">
+                                {isArabic ? "تبقى البيانات" : "Data kept (-k)"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Warning and Confirmation footer */}
+                  <div
+                    className={`border-t p-5 ${
+                      actionMode === "expert"
+                        ? "border-[#fca5a5] bg-[#fef2f2]"
+                        : actionMode === "advanced"
+                        ? "border-[#fed7aa] bg-[#fff7ed]"
+                        : "border-[#d8d1c4] bg-[#fff2e1]"
+                    }`}
+                  >
+                    {actionMode === "expert" ? (
+                      <div className="space-y-3">
+                        <div className="flex gap-3">
+                          <AlertTriangle size={20} className="mt-0.5 shrink-0 text-[#dc2626]" />
+                          <div>
+                            <p className="text-xs font-bold text-[#991b1b]">
+                              {isArabic
+                                ? "تحذير حرج: وضع الخبير يمسح البيانات نهائياً!"
+                                : "CRITICAL WARNING: Expert Mode Permanently Erases Data!"}
+                            </p>
+                            <p className="mt-0.5 text-xs leading-5 text-[#b91c1c]">
+                              {isArabic
+                                ? "سيتم حذف جميع بيانات التطبيقات المحلية، وذاكرة التخزين المؤقت، والجلسات والحسابات بشكل نهائي لا رجعة فيه عبر `pm uninstall --user 0`."
+                                : "All local application data, caches, databases, and stored accounts will be permanently erased via `pm uninstall --user 0`. Reinstalling the package will NOT recover lost user data."}
+                            </p>
+                          </div>
+                        </div>
+
+                        <label className="flex items-start gap-2.5 border border-[#fca5a5] bg-white p-3 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={expertAckCheckbox}
+                            onChange={(e) => setExpertAckCheckbox(e.target.checked)}
+                            className="mt-0.5 h-4 w-4 rounded-xs border-[#b91c1c] text-[#dc2626] focus:ring-[#dc2626]"
+                          />
+                          <span className="text-xs font-semibold text-[#7f1d1d]">
+                            {isArabic
+                              ? "أقر بأنني على دراية بأن جميع بيانات التطبيقات وقواعد البيانات ستُحذف نهائياً وأتحمل المسؤولية."
+                              : "I understand that Expert mode executes `pm uninstall --user 0` and irrevocably deletes app data, databases, and local account states."}
+                          </span>
+                        </label>
+                      </div>
+                    ) : actionMode === "advanced" ? (
+                      <div className="flex gap-3">
+                        <CircleAlert size={18} className="mt-0.5 shrink-0 text-[#ea580c]" />
+                        <div>
+                          <p className="text-xs font-bold text-[#c2410c]">
+                            {isArabic ? "وضع متقدم (إلغاء التثبيت مع إبقاء البيانات)" : "Advanced Mode (Uninstall & Keep Data)"}
+                          </p>
+                          <p className="mt-0.5 text-xs leading-5 text-[#9a3412]">
+                            {isArabic
+                              ? "يتم إلغاء تثبيت الحزمة للمستخدم 0 مع حفظ مجلدات البيانات وذاكرة التخزين عبر خيار `-k`. يمكن استعادتها بكامل بياناتها عبر `cmd package install-existing`."
+                              : "Packages are uninstalled for User 0 while retaining user data directories via `-k`. Applications can be restored with their data intact via `cmd package install-existing`."}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-3">
+                        <CircleAlert size={18} className="mt-0.5 shrink-0 text-[#934639]" />
+                        <p className="text-xs leading-5 text-[#6d3d35]">{debloatCopy.risk}</p>
+                      </div>
+                    )}
+
                     <div className="mt-4 flex justify-end gap-2">
                       <Button variant="outline" onClick={() => setReviewOpen(false)}>
                         {debloatCopy.cancel}
                       </Button>
-                      <Button onClick={runQueued} className="action-button bg-[#14253a] text-[#f6f2ea]">
-                        {debloatCopy.apply}
+                      <Button
+                        onClick={runQueued}
+                        disabled={actionMode === "expert" && !expertAckCheckbox}
+                        className={`action-button font-bold ${
+                          actionMode === "expert"
+                            ? "bg-[#dc2626] text-white hover:bg-[#b91c1c] disabled:opacity-40"
+                            : actionMode === "advanced"
+                            ? "bg-[#ea580c] text-white hover:bg-[#c2410c]"
+                            : "bg-[#14253a] text-[#f6f2ea] hover:bg-[#223952]"
+                        }`}
+                      >
+                        {actionMode === "expert" && <Trash2 size={14} className="mr-1.5" />}
+                        {debloatCopy.apply} ({selected.length})
                       </Button>
                     </div>
                   </div>
@@ -1935,6 +2313,7 @@ export default function Home() {
             isLive={isLive}
             packages={packages}
             disabledPackages={disabledPackages}
+            uninstalledPackages={uninstalledPackages}
             manufacturer={device?.manufacturer}
             model={device?.model}
             androidVersion={device?.androidVersion}

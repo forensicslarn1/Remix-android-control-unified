@@ -4,7 +4,7 @@
  */
 import { AppCategoryBadge, CategoryGlyph } from "./AppCategoryBadge";
 import type { AppCategoryId, CategorySummaryStats } from "@/lib/packageCategories";
-import { CheckCircle2, PauseCircle, ShieldAlert, Sparkles } from "lucide-react";
+import { CheckCircle2, MinusCircle, PauseCircle, ShieldAlert, Sparkles } from "lucide-react";
 
 interface CategoryBreakdownProps {
   stats: CategorySummaryStats;
@@ -50,6 +50,13 @@ export function CategoryBreakdown({
             <PauseCircle size={13} />
             <span>{stats.disabled} {isAr ? "معطّل" : "disabled"}</span>
           </span>
+
+          {stats.uninstalled > 0 && (
+            <span className="inline-flex items-center gap-1.5 border border-[#e5ded2] bg-[#eee9df] px-2.5 py-1 text-xs font-semibold text-[#78716c] dark:border-[#3f3f46] dark:bg-[#27272a] dark:text-[#a1a1aa]">
+              <MinusCircle size={13} />
+              <span>{stats.uninstalled} {isAr ? "غير مثبت" : "uninstalled"}</span>
+            </span>
+          )}
 
           {stats.recommended > 0 && (
             <span className="inline-flex items-center gap-1.5 border border-[#dba193] bg-[#fbe5df] px-2.5 py-1 text-xs font-semibold text-[#934639] dark:border-[#672d24] dark:bg-[#2d1715] dark:text-[#fca5a5]">

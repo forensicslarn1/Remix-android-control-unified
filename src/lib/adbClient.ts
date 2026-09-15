@@ -33,6 +33,80 @@ import {
   TextDecoderStream,
   WritableStream,
 } from "@yume-chan/stream-extra";
+import {
+  type PackageStatus,
+  type PackageRawState,
+  parsePackageState,
+} from "./packageCategories";
+
+export { parsePackageState };
+export type { PackageStatus, PackageRawState };
+
+export type DebloatExecutionLevel = "safe" | "advanced" | "expert";
+
+export interface DebloatLevelConfig {
+  id: DebloatExecutionLevel;
+  name: string;
+  nameAr: string;
+  label: string;
+  labelAr: string;
+  badge: string;
+  badgeAr: string;
+  description: string;
+  descriptionAr: string;
+  commandTemplate: (pkg: string) => string;
+  restoreCommandTemplate: (pkg: string) => string;
+  restoreTemplate?: (pkg: string) => string;
+  riskWarning?: string;
+  riskWarningAr?: string;
+}
+
+export const DEBLOAT_EXECUTION_LEVELS: Record<DebloatExecutionLevel, DebloatLevelConfig> = {
+  safe: {
+    id: "safe",
+    name: "Safe (Disable)",
+    nameAr: "آمن (تعطيل)",
+    label: "Safe (Disable)",
+    labelAr: "آمن (تعطيل)",
+    badge: "Safe",
+    badgeAr: "آمن",
+    description: "Freezes app for User 0. Data and caches remain intact. Easily reversible.",
+    descriptionAr: "تعطيل التطبيق للمستخدم 0 مع بقاء البيانات والذاكرة المؤقتة كما هي. قابل للاستعادة بسهولة.",
+    commandTemplate: (pkg: string) => `pm disable-user --user 0 ${pkg}`,
+    restoreCommandTemplate: (pkg: string) => `pm enable ${pkg}`,
+    restoreTemplate: (pkg: string) => `pm enable ${pkg}`,
+  },
+  advanced: {
+    id: "advanced",
+    name: "Advanced (Uninstall & Keep Data)",
+    nameAr: "متقدم (إلغاء التثبيت مع إبقاء البيانات)",
+    label: "Advanced (Uninstall & Keep Data)",
+    labelAr: "متقدم (إلغاء التثبيت مع إبقاء البيانات)",
+    badge: "Advanced",
+    badgeAr: "متقدم",
+    description: "Uninstalls app for User 0 while preserving user data and cache (-k).",
+    descriptionAr: "إلغاء تثبيت التطبيق للمستخدم 0 مع الاحتفاظ ببيانات المستخدم والتخزين المؤقت (-k).",
+    commandTemplate: (pkg: string) => `pm uninstall -k --user 0 ${pkg}`,
+    restoreCommandTemplate: (pkg: string) => `cmd package install-existing ${pkg}`,
+    restoreTemplate: (pkg: string) => `cmd package install-existing ${pkg}`,
+  },
+  expert: {
+    id: "expert",
+    name: "Expert (Full Purge)",
+    nameAr: "خبير (إزالة كاملة)",
+    label: "Expert (Full Purge)",
+    labelAr: "خبير (إزالة كاملة)",
+    badge: "Expert",
+    badgeAr: "خبير",
+    description: "Completely purges app for User 0. All local data, caches, and accounts are erased.",
+    descriptionAr: "إزالة وحذف كامل للتطبيق للمستخدم 0. يتم مسح جميع البيانات المحلية والذاكرة المؤقتة والحسابات نهائياً.",
+    commandTemplate: (pkg: string) => `pm uninstall --user 0 ${pkg}`,
+    restoreCommandTemplate: (pkg: string) => `cmd package install-existing ${pkg}`,
+    restoreTemplate: (pkg: string) => `cmd package install-existing ${pkg}`,
+    riskWarning: "WARNING: In Expert mode, all local application data, caches, and accounts will be permanently erased!",
+    riskWarningAr: "تحذير: في وضع الخبير (إزالة كاملة)، سيتم مسح جميع بيانات التطبيقات المحلية وذاكرة التخزين المؤقت والحسابات بشكل نهائي!",
+  },
+};
 
 export type DeviceProfile = {
   serial: string;
@@ -83,7 +157,8 @@ export type LogcatStreamSession = {
 
 export type PackageItem = {
   id: string;
-  status: "enabled" | "disabled";
+  status: PackageStatus;
+  rawState?: PackageRawState;
   isSystem: boolean;
   isThirdParty: boolean;
   apkPath?: string;
@@ -93,12 +168,15 @@ export type PackageListResult = {
   result: CommandResult;
   packages: string[];
   disabledPackages: string[];
+  uninstalledPackages: string[];
   systemPackages: string[];
   thirdPartyPackages: string[];
   packageStatuses: Array<{
     id: string;
-    status: "disabled" | "enabled";
+    status: PackageStatus;
+    rawState: PackageRawState;
     isSystem?: boolean;
+    isThirdParty?: boolean;
     apkPath?: string;
   }>;
   packageMap: Map<string, string>;
@@ -690,8 +768,8 @@ export class BrowserAdbClient {
       mainResult = await this.run("pm list packages -u", { timeoutMs: 35000 });
     }
 
-    // 2. Fetch third-party, disabled, and system packages concurrently
-    const [thirdPartyRes, disabledRes, systemRes] = await Promise.all([
+    // 2. Fetch third-party, disabled, system, and installed packages concurrently
+    const [thirdPartyRes, disabledRes, systemRes, installedRes] = await Promise.all([
       this.run("pm list packages -3", { timeoutMs: 25000 }).catch(() => ({
         command: "pm list packages -3",
         stdout: "",
@@ -708,6 +786,13 @@ export class BrowserAdbClient {
       })),
       this.run("pm list packages -s", { timeoutMs: 25000 }).catch(() => ({
         command: "pm list packages -s",
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        at: "",
+      })),
+      this.run("pm list packages", { timeoutMs: 25000 }).catch(() => ({
+        command: "pm list packages",
         stdout: "",
         stderr: "",
         exitCode: 0,
@@ -732,6 +817,7 @@ export class BrowserAdbClient {
     const thirdPartySet = extractPackageIds(thirdPartyRes.stdout);
     const disabledSet = extractPackageIds(disabledRes.stdout);
     const systemSet = extractPackageIds(systemRes.stdout);
+    const installedSet = extractPackageIds(installedRes.stdout);
 
     // Parse main package listing
     const packageMap = new Map<string, string>();
@@ -755,10 +841,22 @@ export class BrowserAdbClient {
       }
     }
 
-    // Ensure all packages from thirdParty, disabled, and system sets are included
+    // Ensure all packages from thirdParty, disabled, system, and installed sets are included
     for (const id of thirdPartySet) allPackagesSet.add(id);
     for (const id of disabledSet) allPackagesSet.add(id);
     for (const id of systemSet) allPackagesSet.add(id);
+    for (const id of installedSet) allPackagesSet.add(id);
+
+    // Identify uninstalled packages for user 0 (known on system with -u, but not in installed list)
+    const uninstalledPackages: string[] = [];
+    if (installedSet.size > 0) {
+      for (const id of allPackagesSet) {
+        if (!installedSet.has(id)) {
+          uninstalledPackages.push(id);
+        }
+      }
+    }
+    const uninstalledSet = new Set(uninstalledPackages);
 
     const packages = Array.from(allPackagesSet).sort();
     const disabledPackages = Array.from(disabledSet).sort();
@@ -770,9 +868,21 @@ export class BrowserAdbClient {
       const isThird = thirdPartySet.has(id) || (!systemSet.has(id) && Boolean(apkPath?.startsWith("/data/")));
       const isSys = !isThird;
 
+      let status: PackageStatus = "enabled";
+      let rawState: PackageRawState = "enabled";
+
+      if (uninstalledSet.has(id)) {
+        status = "uninstalled";
+        rawState = "not installed";
+      } else if (disabledSet.has(id)) {
+        status = "disabled";
+        rawState = "disabled-user";
+      }
+
       return {
         id,
-        status: (disabledSet.has(id) ? "disabled" : "enabled") as "disabled" | "enabled",
+        status,
+        rawState,
         isSystem: isSys,
         isThirdParty: isThird,
         apkPath,
@@ -783,6 +893,7 @@ export class BrowserAdbClient {
       result: mainResult,
       packages,
       disabledPackages,
+      uninstalledPackages,
       systemPackages,
       thirdPartyPackages,
       packageStatuses,
@@ -812,17 +923,91 @@ export class BrowserAdbClient {
     };
   }
 
+  /**
+   * Safe (Disable) -> Executes: pm disable-user --user 0 ${packageName}
+   */
   async disablePackage(id: string) {
     return this.run(`pm disable-user --user 0 ${safePackage(id)}`);
   }
 
-  async uninstallForUser(id: string) {
+  /**
+   * Advanced (Uninstall & Keep Data) -> Executes: pm uninstall -k --user 0 ${packageName}
+   */
+  async uninstallKeepData(id: string) {
     return this.run(`pm uninstall -k --user 0 ${safePackage(id)}`);
   }
 
-  async restorePackage(id: string) {
+  /**
+   * Backward-compatible alias for uninstalling package for user 0
+   */
+  async uninstallForUser(id: string, keepData = true) {
+    const flag = keepData ? "-k " : "";
+    return this.run(`pm uninstall ${flag}--user 0 ${safePackage(id)}`);
+  }
+
+  /**
+   * Expert (Full Purge) -> Executes: pm uninstall --user 0 ${packageName}
+   */
+  async uninstallFullPurge(id: string) {
+    return this.run(`pm uninstall --user 0 ${safePackage(id)}`);
+  }
+
+  /**
+   * Re-enables a disabled package -> Executes: pm enable ${packageName}
+   */
+  async enablePackage(id: string) {
+    return this.run(`pm enable ${safePackage(id)}`);
+  }
+
+  /**
+   * Re-installs an uninstalled/purged package -> Executes: cmd package install-existing ${packageName}
+   */
+  async installExistingPackage(id: string) {
+    return this.run(`cmd package install-existing ${safePackage(id)}`);
+  }
+
+  /**
+   * Executes package action according to selected execution level:
+   * - Safe (Disable) -> pm disable-user --user 0 ${packageName}
+   * - Advanced (Uninstall & Keep Data) -> pm uninstall -k --user 0 ${packageName}
+   * - Expert (Full Purge) -> pm uninstall --user 0 ${packageName}
+   */
+  async executeDebloatAction(id: string, level: DebloatExecutionLevel = "safe") {
+    switch (level) {
+      case "advanced":
+        return this.uninstallKeepData(id);
+      case "expert":
+        return this.uninstallFullPurge(id);
+      case "safe":
+      default:
+        return this.disablePackage(id);
+    }
+  }
+
+  /**
+   * Adapts restore commands according to package state:
+   * - For Disabled -> pm enable ${packageName}
+   * - For Uninstalled/Purged -> cmd package install-existing ${packageName}
+   */
+  async restorePackage(id: string, state?: PackageStatus | PackageRawState | string) {
     const safe = safePackage(id);
-    return this.run(`cmd package install-existing --user 0 ${safe} || pm enable ${safe}`);
+    if (state === "disabled" || state === "disabled-user") {
+      return this.run(`pm enable ${safe}`);
+    }
+    if (state === "uninstalled" || state === "not installed") {
+      return this.run(`cmd package install-existing ${safe}`);
+    }
+
+    // Dynamic detection / fallback: attempt pm enable first
+    const enableResult = await this.run(`pm enable ${safe}`);
+    if (
+      enableResult.exitCode === 0 &&
+      !enableResult.stdout.toLowerCase().includes("not installed") &&
+      !enableResult.stderr.toLowerCase().includes("not installed")
+    ) {
+      return enableResult;
+    }
+    return this.run(`cmd package install-existing ${safe}`);
   }
 
   async applyRoot(command: string) {
