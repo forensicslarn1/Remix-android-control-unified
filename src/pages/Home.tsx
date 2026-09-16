@@ -1010,7 +1010,7 @@ export default function Home() {
           </div>
           <div className="border-y border-[#2f4860] py-3 lg:mb-5">
             <label className="kicker flex items-center gap-2 text-[#7f91a1]" htmlFor="language-choice"><Languages size={13} /> {copy.language}</label>
-            <select id="language-choice" value={language} onChange={(event) => changeLanguage(event.target.value as InterfaceLanguage)} className="mono mt-2 h-9 w-full border border-[#3d566e] bg-[#1b3048] px-2 text-xs text-[#f6f2ea] outline-none focus:border-[#c8f04a]">
+            <select id="language-choice" value={language} onChange={(event) => changeLanguage(event.target.value as InterfaceLanguage)} className="mono mt-2 h-9 w-full border border-[#3d566e] bg-[#1b3048] px-2 text-xs text-[#f6f2ea] outline-none focus:border-[#c8f04a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500">
               <option value="en">{copy.choices.en}</option>
               <option value="ar">{copy.choices.ar}</option>
               <option value="other">{copy.choices.other}</option>
@@ -1088,7 +1088,7 @@ export default function Home() {
                 { label: "Privacy", value: "No telemetry", note: "stamp: only user-triggered GitHub requests", icon: ShieldCheck },
               ].map((item) => {
                 const Icon = item.icon;
-                return <div className="service-card p-4" key={item.label}><div className="flex items-start justify-between"><p className="kicker text-[#687584]">{item.label}</p><span className="state-square text-[#59869c]">0{item.label === "Device" ? 1 : item.label === "Inventory" ? 2 : item.label === "Authority" ? 3 : 4}</span></div><p className="mt-5 text-lg font-bold tracking-[-0.03em]">{item.value}</p><p className="mono mt-1 text-[0.64rem] leading-5 text-[#687584]">{item.note}</p></div>;
+                return <div className="service-card p-4 dark:bg-slate-800/80 dark:text-slate-100 dark:border-slate-700" key={item.label}><div className="flex items-start justify-between"><p className="kicker text-[#687584] dark:text-slate-400">{item.label}</p><span className="state-square text-[#59869c] dark:text-cyan-400 dark:border-cyan-500/40">0{item.label === "Device" ? 1 : item.label === "Inventory" ? 2 : item.label === "Authority" ? 3 : 4}</span></div><p className="mt-5 text-lg font-bold tracking-[-0.03em] dark:text-slate-100">{item.value}</p><p className="mono mt-1 text-[0.64rem] leading-5 text-[#687584] dark:text-slate-400">{item.note}</p></div>;
               })}
             </div>
 
@@ -1197,20 +1197,20 @@ export default function Home() {
                   language={language}
                 />
 
-                <div className="service-card p-4 space-y-3">
+                <div className="service-card p-4 space-y-3 dark:bg-slate-900/90 dark:border-slate-800">
                   <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#687584]" size={15} />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#687584] dark:text-slate-400" size={15} />
                       <input
                         value={query}
                         onChange={(event) => setQuery(event.target.value)}
                         placeholder={debloatCopy.search}
-                        className="h-10 w-full border border-[#d8d1c4] bg-[#fffdf8] pl-9 pr-8 text-xs outline-none focus:border-[#14253a]"
+                        className="h-10 w-full border border-[#d8d1c4] bg-[#fffdf8] pl-9 pr-8 text-xs outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500"
                       />
                       {query && (
                         <button
                           onClick={() => setQuery("")}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#687584] hover:text-[#14253a]"
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#687584] hover:text-[#14253a] dark:text-slate-400 dark:hover:text-slate-200"
                           aria-label="Clear search"
                         >
                           <X size={14} />
@@ -1219,11 +1219,11 @@ export default function Home() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className="mono text-[0.65rem] uppercase text-[#687584] shrink-0">{debloatCopy.category}:</span>
+                      <span className="mono text-[0.65rem] uppercase text-[#687584] dark:text-slate-400 shrink-0">{debloatCopy.category}:</span>
                       <select
                         value={categoryFilter}
                         onChange={(e) => setCategoryFilter(e.target.value as AppCategoryId | "all")}
-                        className="h-10 w-full border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs outline-none focus:border-[#14253a]"
+                        className="h-10 w-full border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500"
                       >
                         <option value="all">{debloatCopy.allCategories} ({packages.length})</option>
                         {ALL_CATEGORY_IDS.map((catId) => {
@@ -1239,11 +1239,11 @@ export default function Home() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className="mono text-[0.65rem] uppercase text-[#687584] shrink-0">{debloatCopy.status}:</span>
+                      <span className="mono text-[0.65rem] uppercase text-[#687584] dark:text-slate-400 shrink-0">{debloatCopy.status}:</span>
                       <select
                         value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value as "all" | "enabled" | "disabled" | "uninstalled")}
-                        className="h-10 w-full border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs outline-none focus:border-[#14253a]"
+                        className="h-10 w-full border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500"
                       >
                         <option value="all">{debloatCopy.allStatuses} ({categoryStats.total})</option>
                         <option value="enabled">{debloatCopy.enabledOnly} ({categoryStats.enabled})</option>
@@ -1253,11 +1253,11 @@ export default function Home() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <span className="mono text-[0.65rem] uppercase text-[#687584] shrink-0">{debloatCopy.sortBy}:</span>
+                      <span className="mono text-[0.65rem] uppercase text-[#687584] dark:text-slate-400 shrink-0">{debloatCopy.sortBy}:</span>
                       <select
                         value={sortBy}
                         onChange={(e) => setSortBy(e.target.value as SortCriterion)}
-                        className="h-10 flex-1 border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs outline-none focus:border-[#14253a]"
+                        className="h-10 flex-1 border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500"
                       >
                         <option value="category">{debloatCopy.sortCategory}</option>
                         <option value="status">{debloatCopy.sortStatus}</option>
@@ -1266,7 +1266,7 @@ export default function Home() {
                       </select>
                       <button
                         onClick={() => setSortOrder((o) => (o === "asc" ? "desc" : "asc"))}
-                        className="action-button h-10 px-2.5 border border-[#d8d1c4] bg-[#fffdf8] hover:bg-[#f3efe6] text-[#14253a]"
+                        className="action-button h-10 px-2.5 border border-[#d8d1c4] bg-[#fffdf8] hover:bg-[#f3efe6] text-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
                         title={sortOrder === "asc" ? "Ascending" : "Descending"}
                       >
                         <ArrowUpDown size={14} className={sortOrder === "desc" ? "rotate-180" : ""} />
@@ -1275,10 +1275,10 @@ export default function Home() {
                   </div>
 
                   {/* Debloat Execution Level Selector & Badge Header */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#eee7da]">
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#eee7da] dark:border-slate-800">
                     <div className="flex flex-wrap items-center gap-3">
                       <div className="flex items-center gap-2">
-                        <label htmlFor="debloat-level-select" className="mono text-[0.68rem] font-bold uppercase tracking-[0.06em] text-[#526273] shrink-0">
+                        <label htmlFor="debloat-level-select" className="mono text-[0.68rem] font-bold uppercase tracking-[0.06em] text-[#526273] dark:text-slate-300 shrink-0">
                           {isArabic ? "مستوى التنفيذ:" : "Execution Level:"}
                         </label>
                         <select
@@ -1288,7 +1288,7 @@ export default function Home() {
                             setActionMode(e.target.value as DebloatExecutionLevel | "restore");
                             setExpertAckCheckbox(false);
                           }}
-                          className="h-8 border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs font-semibold outline-none focus:border-[#14253a]"
+                          className="h-8 border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs font-semibold outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500"
                         >
                           <option value="safe">
                             {isArabic ? "آمن (تعطيل للمستخدم 0)" : "Safe (Disable)"} — pm disable-user
@@ -2346,13 +2346,13 @@ export default function Home() {
         {active === "history" && <ReceiptHistoryWorkspace language={language} history={receiptHistory} archives={receiptArchives.map(({ id, name, createdAt, updatedAt, receipts }) => ({ id, name, createdAt, updatedAt, receiptCount: receipts.length }))} activeArchiveId={activeReceiptArchive?.id || PRIMARY_ARCHIVE_ID} selectArchive={setActiveReceiptArchiveId} createArchive={createReceiptArchive} renameArchive={renameReceiptArchive} deleteArchive={deleteReceiptArchive} remove={removeHistoryReceipt} clear={clearReceiptHistory} updateTags={updateHistoryTags} exportHistory={exportHistory} protectHistory={protectHistory} importHistory={importProtectedHistory} />}
         {active === "about" && <AboutWorkspace language={language} />}
 
-        <section className="mt-7 border-t border-[#d8d1c4] pt-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2"><p className="kicker text-[#687584]">{isArabic ? "تفاصيل المشغّل" : "Operator detail"}</p><span className="status-stamp text-[#59869c]">{isArabic ? "مسجل" : "logged"}</span></div><p className="mt-1 text-sm text-[#526273]">{isArabic ? "شغّل أمر shell مقصوداً. يُسجل كما هو ويستخدم تصحيح USB القياسي ما لم تكتب أمر su -c بنفسك." : "Run a deliberate shell command. It is logged as-is and uses standard USB debugging unless you write an `su -c` command yourself."}</p></div><div className="flex w-full max-w-xl gap-2"><input value={terminal} onChange={(event) => setTerminal(event.target.value)} onKeyDown={(event) => event.key === "Enter" && runTerminal()} placeholder="e.g. getprop ro.build.fingerprint" className="h-10 min-w-0 flex-1 border border-[#d8d1c4] bg-[#fffdf8] px-3 mono text-xs outline-none focus:border-[#14253a]" /><Button onClick={runTerminal} disabled={!isLive || terminalRunning} variant="outline" className="action-button border-[#14253a]">{terminalRunning ? <Loader2 className="animate-spin" size={16} /> : <TerminalSquare size={16} />}</Button></div></div></section>
+        <section className="mt-7 border-t border-[#d8d1c4] pt-5 dark:border-slate-800"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2"><p className="kicker text-[#687584] dark:text-slate-400">{isArabic ? "تفاصيل المشغّل" : "Operator detail"}</p><span className="status-stamp text-[#59869c] dark:text-cyan-400 dark:border-cyan-500/40">{isArabic ? "مسجل" : "logged"}</span></div><p className="mt-1 text-sm text-[#526273] dark:text-slate-300">{isArabic ? "شغّل أمر shell مقصوداً. يُسجل كما هو ويستخدم تصحيح USB القياسي ما لم تكتب أمر su -c بنفسك." : "Run a deliberate shell command. It is logged as-is and uses standard USB debugging unless you write an `su -c` command yourself."}</p></div><div className="flex w-full max-w-xl gap-2"><input value={terminal} onChange={(event) => setTerminal(event.target.value)} onKeyDown={(event) => event.key === "Enter" && runTerminal()} placeholder="e.g. getprop ro.build.fingerprint" className="h-10 min-w-0 flex-1 border border-[#d8d1c4] bg-[#fffdf8] px-3 mono text-xs outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500" /><Button onClick={runTerminal} disabled={!isLive || terminalRunning} variant="outline" className="action-button border-[#14253a] dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800">{terminalRunning ? <Loader2 className="animate-spin" size={16} /> : <TerminalSquare size={16} />}</Button></div></div></section>
       </main>
 
       <aside className="border-t border-[#2f4860] bg-[#14253a] text-[#f6f2ea] lg:sticky lg:top-0 lg:h-screen lg:border-l lg:border-t-0">
         <div className="border-b border-[#2f4860] px-5 py-5"><div className="flex items-center justify-between"><div><p className="kicker text-[#c8f04a]">{isArabic ? "سجل الأوامر" : "Command ledger"}</p><h2 className="mt-1 text-lg font-bold tracking-[-0.035em]">{isArabic ? "لا يحدث شيء من دون سجل." : "Nothing happens off record."}</h2></div><ClipboardList size={19} className="text-[#8e9eae]" /></div><p className="mt-2 text-xs leading-5 text-[#a6b3be]">{isArabic ? "تحفظ الإيصالات المحلية الأمر والمخرجات والصلاحية وتفاصيل الاستعادة معاً." : "Local receipts keep command, output, authority, and restoration detail together."}</p></div>
         <div className="max-h-[440px] space-y-3 overflow-auto p-4 lg:max-h-[calc(100vh-360px)]">{receipts.map((receipt, index) => <article key={`${receipt.at}-${index}`} className="receipt-enter border border-[#2f4860] bg-[#1b3048] p-3"><div className="flex items-center justify-between gap-2"><span className={`status-stamp scale-90 origin-left ${receipt.exitCode === 0 ? "text-[#c8f04a]" : "text-[#f1a38e]"}`}>{receipt.authority}</span><span className="mono text-[0.62rem] text-[#8e9eae]">{shortTime(receipt.at)}</span></div><p className="mt-2 text-xs font-semibold text-white">{receipt.label}</p><p className="mono mt-2 break-all text-[0.66rem] leading-5 text-[#d7e0e8]">{commandName(receipt.command)}</p>{(receipt.stdout || receipt.stderr) && <p className={`mono mt-2 max-h-20 overflow-auto whitespace-pre-wrap border-l pl-2 text-[0.64rem] leading-5 ${receipt.stderr ? "border-[#f1a38e] text-[#f5c5ba]" : "border-[#59869c] text-[#b4c6d2]"}`}>{receipt.stderr || receipt.stdout}</p>}{receipt.restore && <p className="mono mt-2 text-[0.62rem] leading-5 text-[#c8f04a]">restore → {receipt.restore}</p>}</article>)}</div>
-        <div className="border-t border-[#2f4860] bg-[#10243a] p-4"><p className="kicker text-[#c8f04a]">{isArabic ? "تصدير محلي" : "Local export"}</p><div className="mt-3 grid grid-cols-2 gap-2"><button onClick={() => exportReceipts("json")} className="action-button border border-[#3d566e] px-2 py-2 text-xs text-[#f6f2ea] hover:border-[#c8f04a]"><Download className="mr-1 inline" size={13} />JSON</button><button onClick={() => exportReceipts("md")} className="action-button border border-[#3d566e] px-2 py-2 text-xs text-[#f6f2ea] hover:border-[#c8f04a]"><FileText className="mr-1 inline" size={13} />Markdown</button></div><label className="mono mt-4 block text-[0.61rem] text-[#8e9eae]">{isArabic ? "اسم برنامج الاستعادة" : "Recovery script name"}</label><input value={recoveryScriptName} onChange={(event) => setRecoveryScriptName(event.target.value)} className="mono mt-1 h-8 w-full border border-[#3d566e] bg-[#0e1d2c] px-2 text-[0.65rem] text-[#f6f2ea] outline-none focus:border-[#c8f04a]" /><button onClick={exportRecoveryScript} className="action-button mt-2 w-full border border-[#c8f04a] bg-[#c8f04a] px-2 py-2 text-xs font-semibold text-[#14253a] hover:bg-[#d7f66c]"><RotateCcw className="mr-1 inline" size={13} />{isArabic ? "إنشاء برنامج الاستعادة" : "Generate restore script"}</button><p className="mt-2 text-[0.61rem] leading-4 text-[#8e9eae]">{receipts.filter((receipt) => receipt.restore).length} {isArabic ? "مسار استعادة حزمة مسجّل. تبقى التنزيلات في هذا المتصفح." : "recorded package restore path(s). Downloads stay in this browser."}</p></div>
+        <div className="border-t border-[#2f4860] bg-[#10243a] p-4"><p className="kicker text-[#c8f04a]">{isArabic ? "تصدير محلي" : "Local export"}</p><div className="mt-3 grid grid-cols-2 gap-2"><button onClick={() => exportReceipts("json")} className="action-button border border-[#3d566e] px-2 py-2 text-xs text-[#f6f2ea] hover:border-[#c8f04a]"><Download className="mr-1 inline" size={13} />JSON</button><button onClick={() => exportReceipts("md")} className="action-button border border-[#3d566e] px-2 py-2 text-xs text-[#f6f2ea] hover:border-[#c8f04a]"><FileText className="mr-1 inline" size={13} />Markdown</button></div><label className="mono mt-4 block text-[0.61rem] text-[#8e9eae]">{isArabic ? "اسم برنامج الاستعادة" : "Recovery script name"}</label><input value={recoveryScriptName} onChange={(event) => setRecoveryScriptName(event.target.value)} className="mono mt-1 h-8 w-full border border-[#3d566e] bg-[#0e1d2c] px-2 text-[0.65rem] text-[#f6f2ea] outline-none focus:border-[#c8f04a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500" /><button onClick={exportRecoveryScript} className="action-button mt-2 w-full border border-[#c8f04a] bg-[#c8f04a] px-2 py-2 text-xs font-semibold text-[#14253a] hover:bg-[#d7f66c]"><RotateCcw className="mr-1 inline" size={13} />{isArabic ? "إنشاء برنامج الاستعادة" : "Generate restore script"}</button><p className="mt-2 text-[0.61rem] leading-4 text-[#8e9eae]">{receipts.filter((receipt) => receipt.restore).length} {isArabic ? "مسار استعادة حزمة مسجّل. تبقى التنزيلات في هذا المتصفح." : "recorded package restore path(s). Downloads stay in this browser."}</p></div>
       </aside>
       <FirstRunSetupDialog open={setupOpen} language={language} usbSupported={browserCapabilities.usb} cryptoSupported={browserCapabilities.crypto} connecting={connecting} onOpenChange={(open) => open ? setSetupOpen(true) : deferSetup()} onStartAuthorization={beginAuthorizationFromSetup} onDefer={deferSetup} />
       <ShortcutGuideDialog open={shortcutGuideOpen} language={language} onOpenChange={setShortcutGuideOpen} />
@@ -2396,5 +2396,5 @@ function ApkWorkspace({ language, isLive, install }: { language: InterfaceLangua
 
 function FilesWorkspace({ language, isLive, path, setPath, files, loading, load }: { language: InterfaceLanguage; isLive: boolean; path: string; setPath: (value: string) => void; files: DeviceFile[]; loading: boolean; load: () => Promise<void> }) {
   const ar = language === "ar";
-  return <section className="space-y-5"><div className="service-card p-5 sm:p-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="kicker text-[#687584]">{ar ? "منضدة الملفات" : "File workbench"}</p><h2 className="mt-2 text-2xl font-bold tracking-[-0.04em]">{ar ? "استعرض مساراً على الجهاز عبر مزامنة ADB." : "Browse a device path with ADB Sync."}</h2></div><div className="flex w-full gap-2 sm:max-w-lg"><input disabled={!isLive} value={path} onChange={(event) => setPath(event.target.value)} onKeyDown={(event) => event.key === "Enter" && load()} className="h-10 min-w-0 flex-1 border border-[#d8d1c4] bg-[#fffdf8] px-3 mono text-xs outline-none focus:border-[#14253a]" /><Button disabled={!isLive || loading} onClick={load} className="action-button bg-[#14253a] text-[#f6f2ea] hover:bg-[#223952]">{loading ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}</Button></div></div><p className="mt-4 text-xs leading-5 text-[#687584]">{ar ? "تستخدم العمليات الأساسية قناة مزامنة ملفات ADB. أدخل عمليات الملفات المتقدمة أو المدمرة في تفاصيل المشغّل كي يُحفظ أمرها الدقيق." : "Basic actions use the ADB file-sync channel. Advanced destructive file operations should be entered in Operator detail so their exact command is preserved."}</p></div><div className="service-card overflow-hidden"><div className="flex items-center justify-between border-b border-[#d8d1c4] bg-[#f3efe6] px-4 py-3"><p className="mono text-xs text-[#526273]">{path}</p><span className="text-xs text-[#687584]">{files.length} {ar ? "عنصر" : "entries"}</span></div><div className="min-h-64">{!isLive ? <div className="grid min-h-64 place-items-center text-sm text-[#687584]">{ar ? "فوض جهازاً لاستعراض الملفات." : "Authorize a device to browse files."}</div> : files.length === 0 ? <div className="grid min-h-64 place-items-center text-sm text-[#687584]">{ar ? "اختر التحديث لقراءة هذا المسار." : "Select refresh to read this path."}</div> : files.map((file) => <div className="flex items-center gap-3 border-b border-[#eee8dc] px-4 py-3" key={file.name}>{file.isDirectory ? <Folder size={17} className="text-[#59869c]" /> : <FileText size={17} className="text-[#687584]" />}<div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{file.name}</p><p className="mono text-[0.63rem] text-[#687584]">{file.isDirectory ? (ar ? "مجلد" : "directory") : `${file.size.toLocaleString()} ${ar ? "بايت" : "bytes"}`}</p></div><ChevronRight size={16} className="text-[#a6b3be]" /></div>)}</div></div></section>;
+  return <section className="space-y-5"><div className="service-card p-5 sm:p-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="kicker text-[#687584] dark:text-slate-400">{ar ? "منضدة الملفات" : "File workbench"}</p><h2 className="mt-2 text-2xl font-bold tracking-[-0.04em]">{ar ? "استعرض مساراً على الجهاز عبر مزامنة ADB." : "Browse a device path with ADB Sync."}</h2></div><div className="flex w-full gap-2 sm:max-w-lg"><input disabled={!isLive} value={path} onChange={(event) => setPath(event.target.value)} onKeyDown={(event) => event.key === "Enter" && load()} className="h-10 min-w-0 flex-1 border border-[#d8d1c4] bg-[#fffdf8] px-3 mono text-xs outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500" /><Button disabled={!isLive || loading} onClick={load} className="action-button bg-[#14253a] text-[#f6f2ea] hover:bg-[#223952] dark:bg-slate-800 dark:border-slate-700 dark:hover:bg-slate-700">{loading ? <Loader2 className="animate-spin" size={16} /> : <RefreshCw size={16} />}</Button></div></div><p className="mt-4 text-xs leading-5 text-[#687584] dark:text-slate-400">{ar ? "تستخدم العمليات الأساسية قناة مزامنة ملفات ADB. أدخل عمليات الملفات المتقدمة أو المدمرة في تفاصيل المشغّل كي يُحفظ أمرها الدقيق." : "Basic actions use the ADB file-sync channel. Advanced destructive file operations should be entered in Operator detail so their exact command is preserved."}</p></div><div className="service-card overflow-hidden"><div className="flex items-center justify-between border-b border-[#d8d1c4] bg-[#f3efe6] px-4 py-3 dark:border-slate-800 dark:bg-slate-800/80"><p className="mono text-xs text-[#526273] dark:text-slate-300">{path}</p><span className="text-xs text-[#687584] dark:text-slate-400">{files.length} {ar ? "عنصر" : "entries"}</span></div><div className="min-h-64">{!isLive ? <div className="grid min-h-64 place-items-center text-sm text-[#687584] dark:text-slate-400">{ar ? "فوض جهازاً لاستعراض الملفات." : "Authorize a device to browse files."}</div> : files.length === 0 ? <div className="grid min-h-64 place-items-center text-sm text-[#687584] dark:text-slate-400">{ar ? "اختر التحديث لقراءة هذا المسار." : "Select refresh to read this path."}</div> : files.map((file) => <div className="flex items-center gap-3 border-b border-[#eee8dc] px-4 py-3 dark:border-slate-800" key={file.name}>{file.isDirectory ? <Folder size={17} className="text-[#59869c] dark:text-cyan-400" /> : <FileText size={17} className="text-[#687584] dark:text-slate-400" />}<div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{file.name}</p><p className="mono text-[0.63rem] text-[#687584] dark:text-slate-400">{file.isDirectory ? (ar ? "مجلد" : "directory") : `${file.size.toLocaleString()} ${ar ? "بايت" : "bytes"}`}</p></div><ChevronRight size={16} className="text-[#a6b3be] dark:text-slate-500" /></div>)}</div></div></section>;
 }

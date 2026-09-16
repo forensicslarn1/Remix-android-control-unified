@@ -63,6 +63,38 @@
     background-color: #0c1824;
     color: #f6f2ea;
   }
+
+  /* Global Input, Textarea & Select Dark Styling to prevent browser default white background leaks */
+  .dark input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]):not([type="range"]),
+  .dark textarea,
+  .dark select {
+    background-color: #0f172a !important;
+    color: #f1f5f9 !important;
+    border-color: #334155 !important;
+  }
+
+  .dark input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]):not([type="range"])::placeholder,
+  .dark textarea::placeholder {
+    color: #64748b !important;
+  }
+
+  .dark input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]):not([type="range"]):focus,
+  .dark textarea:focus,
+  .dark select:focus {
+    border-color: #06b6d4 !important;
+    outline: none !important;
+    box-shadow: 0 0 0 1px #06b6d4 !important;
+  }
+
+  .dark select option {
+    background-color: #0f172a !important;
+    color: #f1f5f9 !important;
+  }
+
+  .dark input[type="checkbox"],
+  .dark input[type="radio"] {
+    accent-color: #06b6d4;
+  }
 }
 
 .mono {

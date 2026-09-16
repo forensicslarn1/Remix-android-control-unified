@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Markdown from "react-markdown";
+import { askAgenta, isAgentaConfigured, getAgentaConfig } from "@/lib/agentaClient";
 
 export interface ChatMessage {
   id: string;
@@ -33,6 +34,7 @@ export interface ChatMessage {
 }
 
 export type GeminiModelId =
+  | "gemini-2.5-flash"
   | "gemini-3.8-flash"
   | "gemini-3.5-flash"
   | "gemini-3.1-flash-lite"
@@ -59,7 +61,7 @@ export const CHAT_ROLES: ChatRolePreset[] = [
       ar: "أوامر الطرفية، إزالة التطبيقات بأمان، تشخيص السجلات وسياسات النظام",
     },
     icon: Terminal,
-    recommendedModel: "gemini-3.8-flash",
+    recommendedModel: "gemini-2.5-flash",
     systemInstruction:
       "You are an expert Android system engineer and ADB diagnostic specialist inside the Android Control Center workbench. You provide precise, safe, step-by-step guidance on ADB commands, package debloating (e.g. pm uninstall -k --user 0, pm disable-user), logcat filtering, Fastboot, permissions, and device forensics. Always warn users if an action could soft-brick a device or cause boot loops, and provide restore commands when applicable.",
   },
@@ -74,7 +76,7 @@ export const CHAT_ROLES: ChatRolePreset[] = [
       ar: "شهادات APK، مخططات التوقيع، الأذونات الحساسة وتتبع الأدلة",
     },
     icon: ShieldCheck,
-    recommendedModel: "gemini-3.8-flash",
+    recommendedModel: "gemini-2.5-flash",
     systemInstruction:
       "You are an Android security auditor and forensic investigator. You analyze APK security architectures, signature schemes (v1, v2, v3), sensitive permissions (SMS, Camera, Accessibility, Overlay), malware persistence mechanisms, and verifiable audit evidence trails. Provide analytical, highly structured technical reviews.",
   },
@@ -89,7 +91,7 @@ export const CHAT_ROLES: ChatRolePreset[] = [
       ar: "إجابات فورية وأوامر ADB جاهزة للنسخ بأقل تفاصيل زائدة",
     },
     icon: Zap,
-    recommendedModel: "gemini-3.1-flash-lite",
+    recommendedModel: "gemini-2.5-flash",
     systemInstruction:
       "You are an ultra-fast, concise terminal copilot. Provide direct, succinct answers and copy-pasteable ADB shell commands with minimal preamble. Prioritize speed and clarity.",
   },
@@ -117,9 +119,18 @@ const AVAILABLE_MODELS: Array<{
   desc: { en: string; ar: string };
 }> = [
   {
+    id: "gemini-2.5-flash",
+    name: "Gemini 2.5 Flash",
+    badge: { en: "Default / Stable", ar: "الافتراضي / مستقر" },
+    desc: {
+      en: "Highly stable and resilient production model (prevents 503 unavailable errors)",
+      ar: "نموذج إنتاج مستقر وموثوق وسريع (يتجنب أخطاء 503)",
+    },
+  },
+  {
     id: "gemini-3.8-flash",
     name: "Gemini 3.8 Flash",
-    badge: { en: "Recommended", ar: "موصى به" },
+    badge: { en: "Advanced", ar: "متقدم" },
     desc: {
       en: "High intelligence and fast response for general tasks",
       ar: "ذكاء متقدم وسرعة عالية للمهام العامة",
@@ -205,8 +216,21 @@ export function GeminiChatWorkspace({
   });
 
   const [selectedModel, setSelectedModel] = useState<GeminiModelId>(() => {
-    return (localStorage.getItem(MODEL_STORAGE_KEY) as GeminiModelId) || "gemini-3.8-flash";
+    const saved = localStorage.getItem(MODEL_STORAGE_KEY) as GeminiModelId | null;
+    // Set default fallback model in selector to gemini-2.5-flash instead of experimental 3.x models to prevent 503 errors
+    if (
+      saved &&
+      saved !== "gemini-3.8-flash" &&
+      ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.1-pro-preview"].includes(saved)
+    ) {
+      return saved;
+    }
+    return "gemini-2.5-flash";
   });
+
+  // Agenta LLMOps service status & configuration
+  const [isAgentaActive, setIsAgentaActive] = useState<boolean>(() => isAgentaConfigured());
+  const agentaConfig = getAgentaConfig();
 
   const [customInstruction, setCustomInstruction] = useState<string>(() => {
     return (
@@ -372,15 +396,70 @@ export function GeminiChatWorkspace({
       role: "model",
       content: "",
       timestamp: Date.now(),
-      modelUsed: selectedModel,
+      modelUsed: isAgentaActive ? "Agenta LLMOps" : selectedModel,
     };
 
     setMessages((prev) => [...prev, botMessage]);
     setIsGenerating(true);
 
-    // If known that API key is not configured and no client key fallback exists, provide setup guidance
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // 1. Check if VITE_AGENTA_ENDPOINT and VITE_AGENTA_API_KEY are available
+    const agentaEndpoint = ((import.meta.env.VITE_AGENTA_ENDPOINT as string | undefined) || "").trim();
+    const agentaApiKey = ((import.meta.env.VITE_AGENTA_API_KEY as string | undefined) || "").trim();
+    const hasAgentaCredentials = Boolean(agentaEndpoint && agentaApiKey);
+
+    // Prioritize Agenta service over the direct Gemini API
+    if (hasAgentaCredentials) {
+      // Update top status badge to show: "Agenta LLMOps Active"
+      setIsAgentaActive(true);
+
+      try {
+        const agentaResponse = await askAgenta({
+          endpoint: agentaEndpoint,
+          apiKey: agentaApiKey,
+          query,
+          messages: newMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          systemInstruction: enrichedSystemInstruction,
+          model: selectedModel,
+          signal: controller.signal,
+        });
+
+        if (agentaResponse && agentaResponse.trim().length > 0) {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === botMessageId
+                ? {
+                    ...msg,
+                    content: agentaResponse.trim(),
+                    modelUsed: "Agenta LLMOps",
+                  }
+                : msg
+            )
+          );
+          setIsGenerating(false);
+          abortControllerRef.current = null;
+          return;
+        }
+      } catch (agentaError: any) {
+        if (agentaError.name === "AbortError" || controller.signal.aborted) {
+          setIsGenerating(false);
+          abortControllerRef.current = null;
+          return;
+        }
+        console.warn("Agenta LLMOps service request failed; falling back to direct Gemini API:", agentaError);
+        // Only fall back to direct Gemini API if Agenta fails or credentials are missing
+      }
+    }
+
+    // Fallback: If known that API key is not configured and no client key fallback exists, provide setup guidance
     if (apiKeyConfigured === false && !clientFallbackKey) {
-      const botMessageId = `bot-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      setIsGenerating(false);
+      abortControllerRef.current = null;
       const guidance = isAr
         ? `⚠️ **مفتاح GEMINI_API_KEY غير معين حالياً**
 
@@ -401,21 +480,19 @@ To enable live Gemini AI responses:
 
 *Note: All core Android Control features (WebUSB ADB shell, Logcat streaming & .txt exports, and debloating) operate locally without needing an API key.*`;
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: botMessageId,
-          role: "model",
-          content: guidance,
-          timestamp: Date.now(),
-          modelUsed: selectedModel,
-        },
-      ]);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === botMessageId
+            ? {
+                ...msg,
+                content: guidance,
+                modelUsed: selectedModel,
+              }
+            : msg
+        )
+      );
       return;
     }
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
 
     // Direct client fallback execution
     if (useClientFallback && clientFallbackKey) {
@@ -656,9 +733,20 @@ To enable live Gemini AI responses:
             <div className="flex items-center gap-2">
               <h2 className="text-sm font-semibold tracking-wide flex items-center gap-1.5">
                 {isAr ? "روبوت محادثة Gemini" : "Gemini AI Chat Assistant"}
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[0.65rem] font-medium bg-[#b4d642]/30 text-[#435e07] dark:text-[#d3f462]">
-                  v3
-                </span>
+                {isAgentaActive ? (
+                  <span
+                    id="agenta-status-badge"
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[0.68rem] font-bold bg-[#0284c7]/20 text-[#0284c7] dark:bg-[#0284c7]/30 dark:text-[#38bdf8] border border-[#0ea5e9]/40 shadow-xs"
+                    title={isAr ? "خدمة Agenta LLMOps نشطة وتملك الأولوية" : "Agenta LLMOps Active"}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#0284c7] dark:bg-[#38bdf8] animate-pulse" />
+                    Agenta LLMOps Active
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[0.65rem] font-medium bg-[#b4d642]/30 text-[#435e07] dark:text-[#d3f462]">
+                    v3
+                  </span>
+                )}
               </h2>
             </div>
             <p className="text-xs text-[#5c6e7e] dark:text-[#8e9ca8]">
@@ -672,19 +760,19 @@ To enable live Gemini AI responses:
         {/* Model and Role Controls */}
         <div className="flex items-center flex-wrap gap-2">
           {/* Model Selector */}
-          <div className="flex items-center bg-[#f6f2ea] dark:bg-[#0c1622] border border-[#d8d3c5] dark:border-[#1d2d3d] rounded-md px-2 py-1 text-xs">
-            <Sparkles size={13} className="text-[#b4d642] mr-1.5 ml-1.5" />
+          <div className="flex items-center bg-[#f6f2ea] dark:bg-slate-900 border border-[#d8d3c5] dark:border-slate-700 rounded-md px-2 py-1 text-xs focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500">
+            <Sparkles size={13} className="text-[#b4d642] dark:text-cyan-400 mr-1.5 ml-1.5" />
             <select
               value={selectedModel}
               onChange={(e) => setSelectedModel(e.target.value as GeminiModelId)}
-              className="bg-transparent text-xs font-mono font-medium focus:outline-none cursor-pointer text-[#14253a] dark:text-[#f6f2ea]"
+              className="bg-transparent text-xs font-mono font-medium focus:outline-none cursor-pointer text-[#14253a] dark:text-slate-100"
               title={isAr ? "اختر نموذج Gemini" : "Select Gemini Model"}
             >
               {AVAILABLE_MODELS.map((m) => (
                 <option
                   key={m.id}
                   value={m.id}
-                  className="bg-[#f6f2ea] dark:bg-[#121f2d] text-[#14253a] dark:text-[#f6f2ea]"
+                  className="bg-[#f6f2ea] dark:bg-slate-900 text-[#14253a] dark:text-slate-100"
                 >
                   {m.name} ({isAr ? m.badge.ar : m.badge.en})
                 </option>
@@ -697,7 +785,7 @@ To enable live Gemini AI responses:
             variant="outline"
             size="sm"
             onClick={() => setShowRoleConfig(!showRoleConfig)}
-            className="h-8 text-xs border-[#d8d3c5] dark:border-[#1d2d3d] flex items-center gap-1.5 bg-[#f6f2ea] dark:bg-[#0c1622]"
+            className="h-8 text-xs border-[#d8d3c5] dark:border-slate-700 flex items-center gap-1.5 bg-[#f6f2ea] dark:bg-slate-900 dark:text-slate-200"
           >
             <Sliders size={13} />
             <span>{activeRoleObj ? (isAr ? activeRoleObj.name.ar : activeRoleObj.name.en) : (isAr ? "الدور والنظام" : "Role & Instruction")}</span>
@@ -705,7 +793,7 @@ To enable live Gemini AI responses:
           </Button>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-1 border-s border-[#d8d3c5] dark:border-[#1d2d3d] ps-2">
+          <div className="flex items-center gap-1 border-s border-[#d8d3c5] dark:border-slate-700 ps-2">
             <Button
               variant="ghost"
               size="sm"
@@ -730,8 +818,26 @@ To enable live Gemini AI responses:
         </div>
       </div>
 
+      {/* Agenta LLMOps Active Banner */}
+      {isAgentaActive && (
+        <div className="flex items-center justify-between gap-3 px-4 py-2 bg-[#f0f9ff] dark:bg-[#082f49]/30 border-b border-[#bae6fd] dark:border-[#0369a1]/40 text-[#0369a1] dark:text-[#7dd3fc] text-xs">
+          <div className="flex items-center gap-2">
+            <Zap size={14} className="text-[#0284c7] dark:text-[#38bdf8] shrink-0" />
+            <span className="font-semibold text-[0.78rem]">
+              Agenta LLMOps Active
+            </span>
+            <span className="text-[0.7rem] text-[#0369a1]/80 dark:text-[#7dd3fc]/80 hidden sm:inline">
+              ({isAr ? "طلبات المحادثة موجهة عبر Agenta مع الاحتياطي التلقائي لـ Gemini" : "Chat requests routed through Agenta LLMOps with automatic Gemini API fallback"})
+            </span>
+          </div>
+          <span className="text-[0.68rem] px-2 py-0.5 rounded bg-[#0284c7]/10 dark:bg-[#0284c7]/30 text-[#0284c7] dark:text-[#38bdf8] font-mono border border-[#0284c7]/20">
+            Fallback: {selectedModel}
+          </span>
+        </div>
+      )}
+
       {/* API Key Status Notice */}
-      {useClientFallback && clientFallbackKey && (
+      {useClientFallback && clientFallbackKey && !isAgentaActive && (
         <div className="flex items-center justify-between gap-3 px-4 py-2 bg-[#f4fae8] dark:bg-[#142310] border-b border-[#cce89c] dark:border-[#2f4b23] text-[#345c16] dark:text-[#b0ea77] text-xs">
           <div className="flex items-center gap-2">
             <Sparkles size={14} className="text-[#598c25] dark:text-[#a8e869] shrink-0" />
@@ -753,7 +859,7 @@ To enable live Gemini AI responses:
         </div>
       )}
 
-      {apiKeyConfigured === false && !clientFallbackKey && (
+      {apiKeyConfigured === false && !clientFallbackKey && !isAgentaActive && (
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 px-4 py-2.5 bg-[#fdf3e7] dark:bg-[#281c10] border-b border-[#f1d0aa] dark:border-[#4d361c] text-[#854508] dark:text-[#f8b878] text-xs">
           <div className="flex items-start gap-2.5">
             <AlertCircle size={16} className="text-[#c46914] dark:text-[#f8b878] shrink-0 mt-0.5" />
@@ -846,7 +952,7 @@ To enable live Gemini AI responses:
                 value={customInstruction}
                 onChange={(e) => setCustomInstruction(e.target.value)}
                 rows={2}
-                className="w-full text-xs font-mono p-2.5 rounded-md bg-[#f6f2ea] dark:bg-[#0c1622] border border-[#d8d3c5] dark:border-[#1d2d3d] text-[#14253a] dark:text-[#f6f2ea] focus:outline-none focus:ring-1 focus:ring-[#b4d642]"
+                className="w-full text-xs font-mono p-2.5 rounded-md bg-[#f6f2ea] dark:bg-slate-900 border border-[#d8d3c5] dark:border-slate-700 text-[#14253a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500"
                 placeholder={isAr ? "اكتب تعليمات النظام هنا..." : "Type custom system instructions here..."}
               />
             </div>
@@ -1010,7 +1116,7 @@ To enable live Gemini AI responses:
           }}
           className="flex flex-col gap-2 max-w-4xl mx-auto"
         >
-          <div className="relative flex items-end gap-2 bg-[#f6f2ea] dark:bg-[#0c1622] border border-[#d8d3c5] dark:border-[#1d2d3d] rounded-xl p-2 focus-within:ring-1 focus-within:ring-[#b4d642]">
+          <div className="relative flex items-end gap-2 bg-[#f6f2ea] dark:bg-slate-900 border border-[#d8d3c5] dark:border-slate-700 rounded-xl p-2 focus-within:border-cyan-500 focus-within:ring-1 focus-within:ring-cyan-500">
             <textarea
               ref={textareaRef}
               value={inputPrompt}
@@ -1027,7 +1133,7 @@ To enable live Gemini AI responses:
                   : "Ask Gemini about ADB commands, package audits, or system logs... (Shift+Enter for newline)"
               }
               rows={2}
-              className="flex-1 bg-transparent text-xs resize-none focus:outline-none text-[#14253a] dark:text-[#f6f2ea] leading-relaxed"
+              className="flex-1 bg-transparent text-xs resize-none focus:outline-none text-[#14253a] dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 leading-relaxed"
             />
 
             <div className="flex items-center gap-1 shrink-0 pb-0.5">

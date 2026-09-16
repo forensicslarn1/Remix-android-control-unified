@@ -148,13 +148,13 @@ export function ReceiptHistoryWorkspace({
       </div>
 
       {showEncrypt && (
-        <form onSubmit={handleProtect} className="service-card p-4 rounded-md flex flex-wrap gap-2 items-center bg-[#f8f5ee] dark:bg-[#192c3f]">
+        <form onSubmit={handleProtect} className="service-card p-4 rounded-md flex flex-wrap gap-2 items-center bg-[#f8f5ee] dark:bg-slate-900/90 dark:border-slate-800">
           <input
             type="password"
             placeholder={isArabic ? "كلمة المرور (10 أحرف على الأقل)" : "Password (min 10 characters)"}
             value={encryptPassword}
             onChange={(e) => setEncryptPassword(e.target.value)}
-            className="h-8 px-3 text-xs border rounded bg-white dark:bg-[#14253a] flex-1 min-w-[200px]"
+            className="h-8 px-3 text-xs border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none flex-1 min-w-[200px]"
           />
           <Button type="submit" size="sm" className="bg-[#c8f04a] text-[#14253a] h-8 text-xs font-semibold">
             {isArabic ? "تصدير مشفر AES-256" : "Export Encrypted AES-256"}
@@ -163,21 +163,21 @@ export function ReceiptHistoryWorkspace({
       )}
 
       {showImport && (
-        <form onSubmit={handleImport} className="service-card p-4 rounded-md flex flex-wrap gap-2 items-center bg-[#f8f5ee] dark:bg-[#192c3f]">
+        <form onSubmit={handleImport} className="service-card p-4 rounded-md flex flex-wrap gap-2 items-center bg-[#f8f5ee] dark:bg-slate-900/90 dark:border-slate-800">
           <input
             type="file"
             accept=".json"
             onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-            className="text-xs flex-1"
+            className="text-xs flex-1 dark:text-slate-300"
           />
           <input
             type="password"
             placeholder={isArabic ? "كلمة المرور" : "Archive password"}
             value={decryptPassword}
             onChange={(e) => setDecryptPassword(e.target.value)}
-            className="h-8 px-3 text-xs border rounded bg-white dark:bg-[#14253a]"
+            className="h-8 px-3 text-xs border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none"
           />
-          <Button type="submit" size="sm" className="bg-[#14253a] text-white h-8 text-xs">
+          <Button type="submit" size="sm" className="bg-[#14253a] text-white h-8 text-xs dark:bg-slate-800 dark:border dark:border-slate-700 dark:hover:bg-slate-700">
             {isArabic ? "فك التشفير واستيراد" : "Decrypt & Import"}
           </Button>
         </form>

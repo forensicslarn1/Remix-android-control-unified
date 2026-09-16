@@ -45,12 +45,17 @@ async function startServer() {
     const hasKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length > 0);
     res.json({
       configured: hasKey,
-      defaultModel: "gemini-3.8-flash",
+      defaultModel: "gemini-2.5-flash",
       models: [
+        {
+          id: "gemini-2.5-flash",
+          name: "Gemini 2.5 Flash",
+          description: "Stable production model for reliable responses and troubleshooting",
+        },
         {
           id: "gemini-3.8-flash",
           name: "Gemini 3.8 Flash",
-          description: "Default balanced model for general inquiries and troubleshooting",
+          description: "Balanced model for general inquiries and troubleshooting",
         },
         {
           id: "gemini-3.5-flash",
@@ -84,7 +89,7 @@ async function startServer() {
         return;
       }
 
-      const { messages, model = "gemini-3.8-flash", systemInstruction } = req.body;
+      const { messages, model = "gemini-2.5-flash", systemInstruction } = req.body;
 
       if (!Array.isArray(messages) || messages.length === 0) {
         res.status(400).json({ error: "Missing or invalid 'messages' array in request body." });
@@ -138,7 +143,7 @@ async function startServer() {
         return;
       }
 
-      const { messages, model = "gemini-3.8-flash", systemInstruction } = req.body;
+      const { messages, model = "gemini-2.5-flash", systemInstruction } = req.body;
 
       if (!Array.isArray(messages) || messages.length === 0) {
         res.status(400).json({ error: "Missing or invalid 'messages' array." });

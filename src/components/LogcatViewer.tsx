@@ -642,109 +642,109 @@ export function LogcatViewer({ adb, device, language, onAddReceipt }: LogcatView
         </div>
 
         {/* Live Counters Banner */}
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5 pt-3 border-t border-[#eee7da]">
-          <div className="border border-[#d8d1c4] bg-[#fbf9f3] p-2.5 text-center">
-            <p className="text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#687584]">
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5 pt-3 border-t border-[#eee7da] dark:border-slate-800">
+          <div className="border border-[#d8d1c4] dark:border-slate-700 bg-[#fbf9f3] dark:bg-slate-800/80 text-[#14253a] dark:text-slate-100 p-2.5 text-center">
+            <p className="text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#687584] dark:text-slate-300">
               {isArabic ? "إجمالي السجلات" : "Buffer Count"}
             </p>
-            <p className="mono mt-0.5 text-lg font-bold text-[#14253a]">{stats.total}</p>
+            <p className="mono mt-0.5 text-lg font-bold text-[#14253a] dark:text-slate-100">{stats.total}</p>
           </div>
 
           <div
             onClick={() => handleQuickLevel("error")}
-            className="cursor-pointer border border-[#dba193] bg-[#fbe5df] p-2.5 text-center hover:opacity-90 transition-opacity"
+            className="cursor-pointer border border-[#dba193] dark:border-rose-800/60 bg-[#fbe5df] dark:bg-rose-950/40 text-[#c2362b] dark:text-rose-300 p-2.5 text-center hover:opacity-90 transition-opacity"
             title={isArabic ? "تصفية: الأخطاء فقط" : "Filter: Errors only"}
           >
-            <p className="text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#c2362b] flex items-center justify-center gap-1">
+            <p className="text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#c2362b] dark:text-rose-300 flex items-center justify-center gap-1">
               <AlertCircle size={11} />
               {isArabic ? "الأخطاء" : "Errors"}
             </p>
-            <p className="mono mt-0.5 text-lg font-bold text-[#c2362b]">{stats.errors}</p>
+            <p className="mono mt-0.5 text-lg font-bold text-[#c2362b] dark:text-rose-300">{stats.errors}</p>
           </div>
 
           <div
             onClick={() => handleQuickLevel("warn")}
-            className="cursor-pointer border border-[#e6c473] bg-[#fff0ce] p-2.5 text-center hover:opacity-90 transition-opacity"
+            className="cursor-pointer border border-[#e6c473] dark:border-amber-800/60 bg-[#fff0ce] dark:bg-amber-950/40 text-[#b46b02] dark:text-amber-300 p-2.5 text-center hover:opacity-90 transition-opacity"
             title={isArabic ? "تصفية: التحذيرات والأخطاء" : "Filter: Warnings & Errors"}
           >
-            <p className="text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#b46b02] flex items-center justify-center gap-1">
+            <p className="text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#b46b02] dark:text-amber-300 flex items-center justify-center gap-1">
               <AlertTriangle size={11} />
               {isArabic ? "التحذيرات" : "Warnings"}
             </p>
-            <p className="mono mt-0.5 text-lg font-bold text-[#b46b02]">{stats.warnings}</p>
+            <p className="mono mt-0.5 text-lg font-bold text-[#b46b02] dark:text-amber-300">{stats.warnings}</p>
           </div>
 
           <div
             onClick={() => handleQuickLevel("info")}
-            className="cursor-pointer border border-[#a9c7de] bg-[#e8f1f7] p-2.5 text-center hover:opacity-90 transition-opacity"
+            className="cursor-pointer border border-[#a9c7de] dark:border-sky-800/60 bg-[#e8f1f7] dark:bg-sky-950/40 text-[#1d5c8a] dark:text-sky-300 p-2.5 text-center hover:opacity-90 transition-opacity"
             title={isArabic ? "تصفية: معلومات فأعلى" : "Filter: Info & above"}
           >
-            <p className="text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#1d5c8a] flex items-center justify-center gap-1">
+            <p className="text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#1d5c8a] dark:text-sky-300 flex items-center justify-center gap-1">
               <Info size={11} />
               {isArabic ? "المعلومات" : "Info"}
             </p>
-            <p className="mono mt-0.5 text-lg font-bold text-[#1d5c8a]">{stats.infos}</p>
+            <p className="mono mt-0.5 text-lg font-bold text-[#1d5c8a] dark:text-sky-300">{stats.infos}</p>
           </div>
 
-          <div className="border border-[#d8d1c4] bg-[#fbf9f3] p-2.5 text-center col-span-2 sm:col-span-1">
-            <p className="text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#687584]">
+          <div className="border border-[#d8d1c4] dark:border-slate-700 bg-[#fbf9f3] dark:bg-slate-800/80 text-[#14253a] dark:text-slate-100 p-2.5 text-center col-span-2 sm:col-span-1">
+            <p className="text-[0.64rem] font-bold uppercase tracking-[0.08em] text-[#687584] dark:text-slate-300">
               {isArabic ? "معدل التدفق" : "Stream Rate"}
             </p>
-            <p className="mono mt-0.5 text-lg font-bold text-[#263d55]">
-              {ratePerSec} <span className="text-xs font-normal text-[#687584]">/s</span>
+            <p className="mono mt-0.5 text-lg font-bold text-[#263d55] dark:text-slate-100">
+              {ratePerSec} <span className="text-xs font-normal text-[#687584] dark:text-slate-400">/s</span>
             </p>
           </div>
         </div>
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="service-card p-3 sm:p-4 bg-[#fffdfa]">
+      <div className="service-card p-3 sm:p-4 bg-[#fffdfa] dark:bg-[#0f172a] dark:border-slate-700">
         <div className="flex flex-col gap-3">
           {/* Row 1: Quick Filter Presets and Multi-select Level Badges */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs font-semibold text-[#526273] flex items-center gap-1.5 mr-1">
+              <span className="text-xs font-semibold text-[#526273] dark:text-slate-300 flex items-center gap-1.5 mr-1">
                 <Filter size={13} />
                 {isArabic ? "المستوى:" : "Log Level:"}
               </span>
 
               {/* Quick Level Preset Tabs */}
-              <div className="flex items-center border border-[#d8d1c4] bg-[#f8f5ee] p-0.5">
+              <div className="flex items-center border border-[#d8d1c4] dark:border-slate-700 bg-[#f8f5ee] dark:bg-slate-900 p-0.5">
                 <button
                   onClick={() => handleQuickLevel("all")}
-                  className={`px-2.5 py-1 text-[0.68rem] font-semibold transition-all ${quickLevel === "all" ? "bg-[#14253a] text-white" : "text-[#526273] hover:text-[#14253a]"}`}
+                  className={`px-2.5 py-1 text-[0.68rem] font-semibold transition-all ${quickLevel === "all" ? "bg-[#14253a] dark:bg-slate-700 text-white" : "text-[#526273] dark:text-slate-300 hover:text-[#14253a] dark:hover:text-white"}`}
                 >
                   {isArabic ? "الكل" : "All"}
                 </button>
                 <button
                   onClick={() => handleQuickLevel("error")}
-                  className={`px-2.5 py-1 text-[0.68rem] font-semibold transition-all ${quickLevel === "error" ? "bg-[#c2362b] text-white" : "text-[#c2362b] hover:bg-[#fbe5df]"}`}
+                  className={`px-2.5 py-1 text-[0.68rem] font-semibold transition-all ${quickLevel === "error" ? "bg-[#c2362b] text-white" : "text-[#c2362b] dark:text-rose-400 hover:bg-[#fbe5df] dark:hover:bg-rose-950/60"}`}
                 >
                   {isArabic ? "أخطاء فقط" : "Error only"}
                 </button>
                 <button
                   onClick={() => handleQuickLevel("warn")}
-                  className={`px-2.5 py-1 text-[0.68rem] font-semibold transition-all ${quickLevel === "warn" ? "bg-[#b46b02] text-white" : "text-[#b46b02] hover:bg-[#fff0ce]"}`}
+                  className={`px-2.5 py-1 text-[0.68rem] font-semibold transition-all ${quickLevel === "warn" ? "bg-[#b46b02] text-white" : "text-[#b46b02] dark:text-amber-400 hover:bg-[#fff0ce] dark:hover:bg-amber-950/60"}`}
                 >
                   {isArabic ? "تحذيرات+" : "Warn & Error"}
                 </button>
                 <button
                   onClick={() => handleQuickLevel("info")}
-                  className={`px-2.5 py-1 text-[0.68rem] font-semibold transition-all ${quickLevel === "info" ? "bg-[#1d5c8a] text-white" : "text-[#1d5c8a] hover:bg-[#e8f1f7]"}`}
+                  className={`px-2.5 py-1 text-[0.68rem] font-semibold transition-all ${quickLevel === "info" ? "bg-[#1d5c8a] text-white" : "text-[#1d5c8a] dark:text-sky-400 hover:bg-[#e8f1f7] dark:hover:bg-sky-950/60"}`}
                 >
                   {isArabic ? "معلومات+" : "Info+"}
                 </button>
               </div>
 
               {/* Individual Multi-Level Toggle Chips */}
-              <div className="flex items-center gap-1 border-l border-[#d8d1c4] pl-2 ml-1">
+              <div className="flex items-center gap-1 border-l border-[#d8d1c4] dark:border-slate-700 pl-2 ml-1">
                 {LOG_LEVELS.map((lvl) => {
                   const active = activeLevels.has(lvl.id);
                   return (
                     <button
                       key={lvl.id}
                       onClick={() => toggleLevel(lvl.id)}
-                      className={`mono text-[0.65rem] font-bold px-2 py-1 border transition-all ${active ? lvl.badgeTone : "bg-[#f8f5ee] border-[#d8d1c4] text-[#8e9eae] opacity-50"}`}
+                      className={`mono text-[0.65rem] font-bold px-2 py-1 border transition-all ${active ? lvl.badgeTone : "bg-[#f8f5ee] dark:bg-slate-900 border-[#d8d1c4] dark:border-slate-700 text-[#8e9eae] dark:text-slate-500 opacity-50"}`}
                       title={`${lvl.fullLabel} (${active ? "active" : "hidden"})`}
                     >
                       {lvl.label}
@@ -756,23 +756,23 @@ export function LogcatViewer({ adb, device, language, onAddReceipt }: LogcatView
 
             {/* Auto-scroll and buffer controls */}
             <div className="flex items-center gap-3">
-              <label className="flex items-center gap-1.5 text-xs text-[#526273] cursor-pointer select-none">
+              <label className="flex items-center gap-1.5 text-xs text-[#526273] dark:text-slate-300 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={autoScroll}
                   onChange={(e) => setAutoScroll(e.target.checked)}
-                  className="accent-[#14253a] h-3.5 w-3.5"
+                  className="accent-cyan-500 h-3.5 w-3.5"
                 />
-                <ArrowDown size={12} className={autoScroll ? "text-[#3f7a18]" : "text-[#8e9eae]"} />
+                <ArrowDown size={12} className={autoScroll ? "text-[#3f7a18] dark:text-emerald-400" : "text-[#8e9eae] dark:text-slate-500"} />
                 <span>{isArabic ? "تمرير تلقائي للأسفل" : "Auto-scroll"}</span>
               </label>
 
-              <div className="flex items-center gap-1.5 text-xs text-[#526273]">
+              <div className="flex items-center gap-1.5 text-xs text-[#526273] dark:text-slate-300">
                 <span>{isArabic ? "المخزن:" : "Buffer:"}</span>
                 <select
                   value={maxBuffer}
                   onChange={(e) => setMaxBuffer(Number(e.target.value))}
-                  className="h-7 border border-[#d8d1c4] bg-[#fffdf8] px-1.5 text-xs outline-none focus:border-[#14253a]"
+                  className="h-7 border border-[#d8d1c4] bg-[#fffdf8] px-1.5 text-xs outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500"
                 >
                   <option value={500}>500</option>
                   <option value={1000}>1,000</option>
@@ -784,20 +784,20 @@ export function LogcatViewer({ adb, device, language, onAddReceipt }: LogcatView
           </div>
 
           {/* Row 2: Text Search and Tag Filter */}
-          <div className="flex flex-col sm:flex-row items-center gap-2 pt-2 border-t border-[#eee7da]">
+          <div className="flex flex-col sm:flex-row items-center gap-2 pt-2 border-t border-[#eee7da] dark:border-slate-800">
             <div className="relative flex-1 w-full">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#687584]" />
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#687584] dark:text-slate-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={isArabic ? "بحث في نص السجل، الوسم (Tag)، أو رقم العملية (PID)..." : "Filter by message text, Tag, or Process ID (PID)..."}
-                className="h-9 w-full border border-[#d8d1c4] bg-[#fffdf8] pl-9 pr-8 text-xs outline-none focus:border-[#14253a]"
+                className="h-9 w-full border border-[#d8d1c4] bg-[#fffdf8] pl-9 pr-8 text-xs outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8e9eae] hover:text-[#14253a]"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#8e9eae] hover:text-[#14253a] dark:text-slate-400 dark:hover:text-slate-200"
                 >
                   <X size={13} />
                 </button>
@@ -806,11 +806,11 @@ export function LogcatViewer({ adb, device, language, onAddReceipt }: LogcatView
 
             {/* Tag Selector */}
             <div className="flex items-center gap-1.5 w-full sm:w-auto">
-              <span className="text-xs text-[#526273] shrink-0">{isArabic ? "الوسم:" : "Tag:"}</span>
+              <span className="text-xs text-[#526273] dark:text-slate-300 shrink-0">{isArabic ? "الوسم:" : "Tag:"}</span>
               <select
                 value={selectedTag}
                 onChange={(e) => setSelectedTag(e.target.value)}
-                className="h-9 min-w-[150px] border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs outline-none focus:border-[#14253a]"
+                className="h-9 min-w-[150px] border border-[#d8d1c4] bg-[#fffdf8] px-2 text-xs outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500"
               >
                 <option value="all">{isArabic ? "كل الوسوم (Tags)" : "All Tags"}</option>
                 {availableTags.map((t) => (
@@ -819,7 +819,7 @@ export function LogcatViewer({ adb, device, language, onAddReceipt }: LogcatView
               </select>
             </div>
 
-            <div className="text-[0.68rem] mono text-[#687584] shrink-0">
+            <div className="text-[0.68rem] mono text-[#687584] dark:text-slate-400 shrink-0">
               {filteredLogs.length} / {logs.length} {isArabic ? "سجل" : "lines"}
             </div>
           </div>
@@ -1161,7 +1161,7 @@ export function LogcatViewer({ adb, device, language, onAddReceipt }: LogcatView
                       value={customFilename}
                       onChange={(e) => setCustomFilename(e.target.value)}
                       placeholder={defaultFilename}
-                      className="h-8 flex-1 border border-[#d8d1c4] bg-[#fffdf8] px-2.5 mono text-xs outline-none focus:border-[#14253a] dark:border-[#38526d] dark:bg-[#142232] dark:text-[#e4ebf2]"
+                      className="h-8 flex-1 border border-[#d8d1c4] bg-[#fffdf8] px-2.5 mono text-xs outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500"
                     />
                     <span className="mono text-xs px-2 py-1 rounded bg-[#eee7da] dark:bg-[#203246] text-[#526273] dark:text-[#9bb1c5]">
                       .txt
