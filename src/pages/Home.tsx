@@ -20,12 +20,24 @@ import { ShortcutGuideDialog } from "@/components/ShortcutGuideDialog";
 import { WebUsbConnectionManager } from "@/components/WebUsbConnectionManager";
 import { LogcatViewer } from "@/components/LogcatViewer";
 import { createCaseId, exportTimestampedCaseBundle } from "@/lib/caseBundle";
-import { AlertTriangle, AppWindow, ArrowRight, ArrowUpDown, Bot, Boxes, Check, CheckCircle2, CheckSquare, ChevronRight, CircleAlert, ClipboardCheck, ClipboardList, Cpu, Download, Eye, EyeOff, FileArchive, FileText, Filter, Folder, HardDrive, History, HelpCircle, Info, Keyboard, Languages, Layers, ListFilter, Loader2, LockKeyhole, MonitorUp, Moon, PackageOpen, PauseCircle, PlugZap, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square, TerminalSquare, Trash2, Unplug, Upload, Usb, UsersRound, Sun, X } from "lucide-react";
+import { AlertTriangle, AppWindow, ArrowRight, ArrowUpDown, Bot, Boxes, Check, CheckCircle2, CheckSquare, ChevronRight, CircleAlert, ClipboardCheck, ClipboardList, Cpu, Download, Eye, EyeOff, FileArchive, FileText, Filter, Folder, HardDrive, History, HelpCircle, Info, Keyboard, Languages, Layers, ListFilter, Loader2, Lock, LockKeyhole, MonitorUp, Moon, PackageOpen, PauseCircle, PlugZap, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square, TerminalSquare, Trash2, Unplug, Upload, Usb, UsersRound, Sun, X } from "lucide-react";
 import GeminiChatWorkspace from "@/components/GeminiChatWorkspace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppCategoryBadge, PackageStatusBadge, DebloatExecutionBadge, CategoryGlyph } from "@/components/AppCategoryBadge";
 import { CategoryBreakdown } from "@/components/CategoryBreakdown";
+import {
+  type DebloatTier,
+  type DebloatItem,
+  type DebloatPreset,
+  ALL_PRESETS,
+  SAMSUNG_PRESET,
+  TRANSSION_PRESET,
+  getPresetForManufacturer,
+  isPackageProtected,
+  GLOBAL_PROTECTED_PACKAGES,
+} from "@/data/presets";
+import { DebloatTierSuite } from "@/components/DebloatTierSuite";
 import {
   APP_CATEGORIES,
   ALL_CATEGORY_IDS,
@@ -191,6 +203,8 @@ export default function Home() {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [query, setQuery] = useState("");
   const [recommendedOnly, setRecommendedOnly] = useState(false);
+  const [selectedDebloatTier, setSelectedDebloatTier] = useState<DebloatTier | "all">("all");
+  const [selectedPresetId, setSelectedPresetId] = useState<string | "all">("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [actionMode, setActionMode] = useState<DebloatExecutionLevel | "restore">("safe");
@@ -247,6 +261,44 @@ export default function Home() {
     return buildCategorizedInventory(packages, catalog, disabledPackages, uninstalledPackages);
   }, [packages, catalog, disabledPackages, uninstalledPackages]);
 
+  // Pre-select curated preset if device manufacturer matches (Samsung / Transsion)
+  useEffect(() => {
+    if (device?.manufacturer) {
+      const matchedPreset = getPresetForManufacturer(device.manufacturer);
+      if (matchedPreset) {
+        setSelectedPresetId(matchedPreset.id);
+      }
+    }
+  }, [device?.manufacturer]);
+
+  const presetItemMap = useMemo(() => {
+    const map = new Map<string, DebloatItem>();
+    ALL_PRESETS.forEach((preset) => {
+      preset.items.forEach((item) => {
+        map.set(item.package, item);
+      });
+    });
+    return map;
+  }, []);
+
+  const activePreset = useMemo(() => {
+    if (selectedPresetId === "all") return undefined;
+    return ALL_PRESETS.find((p) => p.id === selectedPresetId);
+  }, [selectedPresetId]);
+
+  const getPackageTier = (pkgId: string, item?: CategorizedPackage): DebloatTier => {
+    const pItem = presetItemMap.get(pkgId);
+    if (pItem) return pItem.tier;
+    if (!item) return "safe";
+    if (item.category.id === "telemetry" || item.labels.some((l) => l.toLowerCase().includes("telemetry"))) {
+      return "telemetry";
+    }
+    if (item.removal === "Advanced" || item.removal === "Expert") {
+      return "advanced";
+    }
+    return "safe";
+  };
+
   const categoryStats = useMemo(() => {
     return calculateCategoryStats(categorizedInventory);
   }, [categorizedInventory]);
@@ -257,6 +309,17 @@ export default function Home() {
 
   const visibleCategorizedPackages = useMemo(() => {
     let list = categorizedInventory;
+
+    // 1. Filter by preset if a manufacturer suite is selected
+    if (activePreset) {
+      const presetPkgSet = new Set(activePreset.items.map((i) => i.package));
+      list = list.filter((item) => presetPkgSet.has(item.id));
+    }
+
+    // 2. Filter by 3-way tier (safe, telemetry, advanced)
+    if (selectedDebloatTier !== "all") {
+      list = list.filter((item) => getPackageTier(item.id, item) === selectedDebloatTier);
+    }
 
     if (recommendedOnly) {
       list = list.filter((item) => item.removal === "Recommended");
@@ -273,13 +336,56 @@ export default function Home() {
     if (query.trim()) {
       const q = query.toLowerCase();
       list = list.filter((item) => {
-        const searchable = `${item.id} ${item.category.name} ${item.category.nameAr} ${item.list} ${item.description} ${item.labels.join(" ")}`.toLowerCase();
+        const pItem = presetItemMap.get(item.id);
+        const pName = pItem ? pItem.name.toLowerCase() : "";
+        const pDesc = pItem ? pItem.description.toLowerCase() : "";
+        const searchable = `${item.id} ${pName} ${pDesc} ${item.category.name} ${item.category.nameAr} ${item.list} ${item.description} ${item.labels.join(" ")}`.toLowerCase();
         return searchable.includes(q);
       });
     }
 
     return sortCategorizedPackages(list, sortBy, sortOrder);
-  }, [categorizedInventory, recommendedOnly, categoryFilter, statusFilter, query, sortBy, sortOrder]);
+  }, [categorizedInventory, activePreset, selectedDebloatTier, recommendedOnly, categoryFilter, statusFilter, query, sortBy, sortOrder, presetItemMap]);
+
+  const tierCounts = useMemo(() => {
+    const baseList = activePreset
+      ? categorizedInventory.filter((item) => activePreset.items.some((i) => i.package === item.id))
+      : categorizedInventory;
+
+    let safe = 0;
+    let telemetry = 0;
+    let advanced = 0;
+
+    baseList.forEach((item) => {
+      const tier = getPackageTier(item.id, item);
+      if (tier === "safe") safe++;
+      else if (tier === "telemetry") telemetry++;
+      else if (tier === "advanced") advanced++;
+    });
+
+    return {
+      safe,
+      telemetry,
+      advanced,
+      all: baseList.length,
+    };
+  }, [categorizedInventory, activePreset, presetItemMap]);
+
+  const quickSelectTier = (tier: DebloatTier) => {
+    const matchingIds = visibleCategorizedPackages
+      .filter((pkg) => getPackageTier(pkg.id, pkg) === tier && pkg.status === "enabled" && !isPackageProtected(pkg.id))
+      .map((pkg) => pkg.id);
+    if (matchingIds.length === 0) {
+      toast.info(isArabic ? `لا توجد حزم مفعلة في مستوى ${tier}.` : `No enabled packages found in ${tier} tier.`);
+      return;
+    }
+    setSelected((current) => Array.from(new Set([...current, ...matchingIds])));
+    toast.success(
+      isArabic
+        ? `تم تحديد ${matchingIds.length} حزمة مفعلة في مستوى (${tier}).`
+        : `Selected ${matchingIds.length} enabled package(s) in (${tier}) tier.`
+    );
+  };
 
   const groupedCategorizedPackages = useMemo(() => {
     const groups = new Map<AppCategoryId, CategorizedPackage[]>();
@@ -653,7 +759,19 @@ export default function Home() {
   const executeBulkAction = async (actionParam: DebloatExecutionLevel | "restore" | "disable" | "uninstall", targetIds?: string[]) => {
     const action: DebloatExecutionLevel | "restore" =
       actionParam === "disable" ? "safe" : actionParam === "uninstall" ? "advanced" : actionParam;
-    const list = targetIds || selected;
+    const rawList = targetIds || selected;
+
+    // Strict Guardrail: Never disable, uninstall, or purge GLOBAL_PROTECTED_PACKAGES!
+    const list = action === "restore" ? rawList : rawList.filter((id) => !isPackageProtected(id));
+    const protectedSkipped = rawList.length - list.length;
+    if (protectedSkipped > 0) {
+      toast.info(
+        isArabic
+          ? `تم استبعاد ${protectedSkipped} حزمة نظام محمية عالمياً تلقائياً لحماية جهازك.`
+          : `Excluded ${protectedSkipped} globally protected package(s) to protect your device.`
+      );
+    }
+
     if (list.length === 0) {
       toast.error(isArabic ? "لم يتم تحديد أي تطبيقات لتنفيذ العملية." : "No applications selected for bulk operation.");
       return;
@@ -783,6 +901,14 @@ export default function Home() {
     if (pkg.status === "disabled" || pkg.status === "uninstalled") {
       await restore(pkg.id, pkg.status);
     } else {
+      if (isPackageProtected(pkg.id)) {
+        toast.error(
+          isArabic
+            ? `الحزمة [${pkg.id}] محمية عالمياً (لوحة مفاتيح / عنصر نظام حيوي) لمنع تعطل الجهاز.`
+            : `Package [${pkg.id}] is globally protected (critical keyboard/system component).`
+        );
+        return;
+      }
       const levelToRun: DebloatExecutionLevel = actionMode === "restore" ? "safe" : actionMode;
       try {
         const result = await adb.current.executeDebloatAction(pkg.id, levelToRun);
@@ -805,6 +931,14 @@ export default function Home() {
   };
 
   const disableDeGooglePackage = async (id: string, label: string, level: DebloatExecutionLevel = "safe") => {
+    if (isPackageProtected(id)) {
+      toast.error(
+        isArabic
+          ? `الحزمة [${id}] محمية عالمياً لمنع تعطل الجهاز.`
+          : `Package [${id}] is globally protected to prevent system failure.`
+      );
+      return false;
+    }
     try {
       const result = await adb.current.executeDebloatAction(id, level);
       const restoreCmd = DEBLOAT_EXECUTION_LEVELS[level].restoreCommandTemplate(id);
@@ -1197,6 +1331,18 @@ export default function Home() {
                   language={language}
                 />
 
+                {/* Tiered Debloat Presets Suite (Samsung One UI / Transsion / Global Guardrails) */}
+                <DebloatTierSuite
+                  selectedTier={selectedDebloatTier}
+                  onSelectTier={setSelectedDebloatTier}
+                  activePresetId={selectedPresetId}
+                  onSelectPreset={setSelectedPresetId}
+                  detectedManufacturer={device?.manufacturer}
+                  isArabic={isArabic}
+                  tierCounts={tierCounts}
+                  onQuickSelectTier={quickSelectTier}
+                />
+
                 <div className="service-card p-4 space-y-3 dark:bg-slate-900/90 dark:border-slate-800">
                   <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
                     <div className="relative">
@@ -1386,48 +1532,75 @@ export default function Home() {
                   </div>
 
                   {/* Bulk Selection Quick Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-[#eee7da] bg-[#faf7f0] -mx-4 -mb-4 px-4 py-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-[#eee7da] dark:border-slate-800 bg-[#faf7f0] dark:bg-slate-900/60 -mx-4 -mb-4 px-4 py-2.5">
                     <div className="flex flex-wrap items-center gap-1.5">
-                      <span className="text-[0.68rem] font-bold text-[#526273] uppercase tracking-[0.06em] mr-1">
+                      <span className="text-[0.68rem] font-bold text-[#526273] dark:text-slate-400 uppercase tracking-[0.06em] mr-1">
                         {isArabic ? "تحديد سريع:" : "Quick Select:"}
                       </span>
                       <button
                         type="button"
                         onClick={() => {
-                          const visibleIds = visibleCategorizedPackages.map((p) => p.id);
+                          const visibleIds = visibleCategorizedPackages.filter((p) => !isPackageProtected(p.id)).map((p) => p.id);
                           setSelected((current) => Array.from(new Set([...current, ...visibleIds])));
                         }}
-                        className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#d8d1c4] bg-[#fffdf8] hover:bg-[#eee8db] text-[#14253a]"
+                        className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#d8d1c4] dark:border-slate-700 bg-[#fffdf8] dark:bg-slate-800 hover:bg-[#eee8db] text-[#14253a] dark:text-slate-200"
                       >
-                        {isArabic ? "الكل الظاهر" : "All Visible"} ({visibleCategorizedPackages.length})
+                        {isArabic ? "الكل الظاهر" : "All Visible"} ({visibleCategorizedPackages.filter((p) => !isPackageProtected(p.id)).length})
                       </button>
                       <button
                         type="button"
                         onClick={() => {
-                          const recIds = visibleCategorizedPackages.filter((p) => p.removal === "Recommended").map((p) => p.id);
+                          const recIds = visibleCategorizedPackages.filter((p) => p.removal === "Recommended" && !isPackageProtected(p.id)).map((p) => p.id);
                           setSelected((current) => Array.from(new Set([...current, ...recIds])));
                         }}
-                        className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#b9da71] bg-[#eef8cd] hover:bg-[#e4f2b8] text-[#3f7a18]"
+                        className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#b9da71] dark:border-emerald-800 bg-[#eef8cd] dark:bg-emerald-950/60 hover:bg-[#e4f2b8] text-[#3f7a18] dark:text-emerald-300"
                       >
-                        {isArabic ? "الموصى بها" : "Recommended"} ({visibleCategorizedPackages.filter((p) => p.removal === "Recommended").length})
+                        {isArabic ? "الموصى بها" : "Recommended"} ({visibleCategorizedPackages.filter((p) => p.removal === "Recommended" && !isPackageProtected(p.id)).length})
                       </button>
                       <button
                         type="button"
                         onClick={() => {
-                          const enabledIds = visibleCategorizedPackages.filter((p) => p.status === "enabled").map((p) => p.id);
+                          const enabledIds = visibleCategorizedPackages.filter((p) => p.status === "enabled" && !isPackageProtected(p.id)).map((p) => p.id);
                           setSelected((current) => Array.from(new Set([...current, ...enabledIds])));
                         }}
-                        className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#d8d1c4] bg-[#fffdf8] hover:bg-[#eee8db] text-[#14253a]"
+                        className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#d8d1c4] dark:border-slate-700 bg-[#fffdf8] dark:bg-slate-800 hover:bg-[#eee8db] text-[#14253a] dark:text-slate-200"
                       >
-                        {isArabic ? "المفعلة" : "Enabled"} ({visibleCategorizedPackages.filter((p) => p.status === "enabled").length})
+                        {isArabic ? "المفعلة" : "Enabled"} ({visibleCategorizedPackages.filter((p) => p.status === "enabled" && !isPackageProtected(p.id)).length})
                       </button>
+
+                      {/* Tier Quick Select shortcuts */}
+                      <button
+                        type="button"
+                        onClick={() => quickSelectTier("safe")}
+                        className="action-button h-7 px-2 text-[0.68rem] font-semibold border border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-100"
+                        title={isArabic ? "تحديد الحزم الآمنة المفعلة" : "Select safe enabled packages"}
+                      >
+                        {isArabic ? "آمن" : "Safe"} ({tierCounts.safe})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => quickSelectTier("telemetry")}
+                        className="action-button h-7 px-2 text-[0.68rem] font-semibold border border-cyan-300 dark:border-cyan-800 bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300 hover:bg-cyan-100"
+                        title={isArabic ? "تحديد حزم التتبع المفعلة" : "Select telemetry enabled packages"}
+                      >
+                        {isArabic ? "تتبع" : "Telemetry"} ({tierCounts.telemetry})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => quickSelectTier("advanced")}
+                        className="action-button h-7 px-2 text-[0.68rem] font-semibold border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 hover:bg-amber-100"
+                        title={isArabic ? "تحديد الحزم المتقدمة المفعلة" : "Select advanced enabled packages"}
+                      >
+                        {isArabic ? "متقدم" : "Advanced"} ({tierCounts.advanced})
+                      </button>
+
                       <button
                         type="button"
                         onClick={() => {
                           const disIds = visibleCategorizedPackages.filter((p) => p.status === "disabled").map((p) => p.id);
                           setSelected((current) => Array.from(new Set([...current, ...disIds])));
                         }}
-                        className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#d8d1c4] bg-[#fffdf8] hover:bg-[#eee8db] text-[#14253a]"
+                        className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#d8d1c4] dark:border-slate-700 bg-[#fffdf8] dark:bg-slate-800 hover:bg-[#eee8db] text-[#14253a] dark:text-slate-200"
                       >
                         {isArabic ? "المعطلة" : "Disabled"} ({visibleCategorizedPackages.filter((p) => p.status === "disabled").length})
                       </button>
@@ -1438,7 +1611,7 @@ export default function Home() {
                             const uninstalledIds = visibleCategorizedPackages.filter((p) => p.status === "uninstalled").map((p) => p.id);
                             setSelected((current) => Array.from(new Set([...current, ...uninstalledIds])));
                           }}
-                          className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#fca5a5] bg-[#fff1f1] hover:bg-[#fee2e2] text-[#b91c1c]"
+                          className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#fca5a5] dark:border-rose-800 bg-[#fff1f1] dark:bg-rose-950/60 hover:bg-[#fee2e2] text-[#b91c1c] dark:text-rose-300"
                         >
                           {isArabic ? "غير المثبتة" : "Uninstalled"} ({visibleCategorizedPackages.filter((p) => p.status === "uninstalled").length})
                         </button>
@@ -1447,7 +1620,7 @@ export default function Home() {
                         <button
                           type="button"
                           onClick={() => setSelected([])}
-                          className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#dba193] bg-[#fbe5df] text-[#c2362b] hover:bg-[#f8d5cc]"
+                          className="action-button h-7 px-2.5 text-[0.68rem] font-semibold border border-[#dba193] dark:border-rose-800 bg-[#fbe5df] dark:bg-rose-950/80 text-[#c2362b] dark:text-rose-200 hover:bg-[#f8d5cc]"
                         >
                           <X size={12} className="inline mr-1" />
                           {isArabic ? "إلغاء التحديد" : "Deselect All"}
@@ -1455,8 +1628,8 @@ export default function Home() {
                       )}
                     </div>
 
-                    <div className="flex items-center gap-2 mono text-xs font-semibold text-[#14253a]">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 border border-[#59869c] bg-[#e8f1f7] text-[#1d5c8a]">
+                    <div className="flex items-center gap-2 mono text-xs font-semibold text-[#14253a] dark:text-slate-200">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 border border-[#59869c] dark:border-cyan-800 bg-[#e8f1f7] dark:bg-cyan-950/60 text-[#1d5c8a] dark:text-cyan-300">
                         {selected.length} {isArabic ? "محدد" : "selected"}
                       </span>
                     </div>
@@ -1568,26 +1741,81 @@ export default function Home() {
                               <tbody>
                                 {catPackages.map((item) => {
                                   const checked = selected.includes(item.id);
+                                  const isProtected = isPackageProtected(item.id);
+                                  const presetItem = presetItemMap.get(item.id);
+                                  const itemTier = getPackageTier(item.id, item);
                                   return (
-                                    <tr key={item.id} className="border-t border-[#e5ded2] hover:bg-[#fbf8f1]">
+                                    <tr key={item.id} className="border-t border-[#e5ded2] dark:border-slate-800 hover:bg-[#fbf8f1] dark:hover:bg-slate-800/50">
                                       <td className="px-4 py-3.5">
-                                        <input
-                                          aria-label={`${debloatCopy.reviewCommands} ${item.id}`}
-                                          type="checkbox"
-                                          checked={checked}
-                                          onChange={() =>
-                                            setSelected((current) =>
-                                              checked ? current.filter((id) => id !== item.id) : [...current, item.id]
-                                            )
-                                          }
-                                          className="h-4 w-4 accent-[#14253a]"
-                                        />
+                                        {isProtected ? (
+                                          <div
+                                            title={
+                                              isArabic
+                                                ? "حزمة محمية عالمياً لمنع تعطل لوحة المفاتيح أو النظام."
+                                                : "Globally protected package (keyboard / OS critical). Cannot be debloated."
+                                            }
+                                            className="flex items-center justify-center w-5 h-5 text-emerald-600 dark:text-emerald-400 bg-emerald-100/70 dark:bg-emerald-950/60 rounded border border-emerald-300 dark:border-emerald-700"
+                                          >
+                                            <Lock size={12} />
+                                          </div>
+                                        ) : (
+                                          <input
+                                            aria-label={`${debloatCopy.reviewCommands} ${item.id}`}
+                                            type="checkbox"
+                                            checked={checked}
+                                            onChange={() =>
+                                              setSelected((current) =>
+                                                checked ? current.filter((id) => id !== item.id) : [...current, item.id]
+                                              )
+                                            }
+                                            className="h-4 w-4 accent-[#14253a] dark:accent-cyan-500"
+                                          />
+                                        )}
                                       </td>
                                       <td className="px-3 py-3.5">
+                                        {presetItem && (
+                                          <div className="flex items-center gap-1.5 mb-0.5">
+                                            <span className="text-xs font-bold text-[#14253a] dark:text-slate-100">
+                                              {presetItem.name}
+                                            </span>
+                                            {presetItem.recommendedAction === "uninstall" ? (
+                                              <span className="mono text-[0.6rem] uppercase tracking-wider px-1 py-0.2 bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded font-semibold">
+                                                {isArabic ? "إلغاء تثبيت" : "Uninstall"}
+                                              </span>
+                                            ) : (
+                                              <span className="mono text-[0.6rem] uppercase tracking-wider px-1 py-0.2 bg-sky-100 dark:bg-sky-950/70 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800 rounded font-semibold">
+                                                {isArabic ? "تعطيل" : "Disable"}
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
                                         <p className="mono text-xs font-semibold">{item.id}</p>
-                                        <p className="mt-0.5 text-[0.67rem] text-[#687584]">
-                                          {item.list} {isArabic ? "قائمة" : "list"}
-                                        </p>
+                                        <div className="flex items-center gap-1.5 mt-0.5">
+                                          <span className="text-[0.67rem] text-[#687584] dark:text-slate-400">
+                                            {item.list} {isArabic ? "قائمة" : "list"}
+                                          </span>
+                                          <span
+                                            className={`mono text-[0.62rem] px-1.5 py-0.2 rounded border font-semibold ${
+                                              itemTier === "safe"
+                                                ? "border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300"
+                                                : itemTier === "telemetry"
+                                                ? "border-cyan-300 dark:border-cyan-800 bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300"
+                                                : "border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300"
+                                            }`}
+                                          >
+                                            {itemTier === "safe"
+                                              ? isArabic ? "آمن" : "Safe"
+                                              : itemTier === "telemetry"
+                                              ? isArabic ? "تتبع" : "Telemetry"
+                                              : isArabic ? "متقدم" : "Advanced"}
+                                          </span>
+                                          {isProtected && (
+                                            <span className="mono text-[0.62rem] px-1.5 py-0.2 rounded border border-emerald-500/80 bg-emerald-100 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-200 font-bold flex items-center gap-0.5">
+                                              <Lock size={9} />
+                                              {isArabic ? "محمي عالمياً" : "Protected"}
+                                            </span>
+                                          )}
+                                        </div>
                                       </td>
                                       <td className="px-3 py-3.5">
                                         <PackageStatusBadge status={item.status} rawState={item.rawState} language={language} />
@@ -1598,9 +1826,23 @@ export default function Home() {
                                         </span>
                                       </td>
                                       <td className="max-w-sm px-3 py-3.5">
-                                        <p className="line-clamp-2 text-xs leading-5 text-[#526273]">
-                                          {item.description}
-                                        </p>
+                                        {presetItem ? (
+                                          <p className="text-xs leading-5 text-[#526273] dark:text-slate-300 font-medium">
+                                            {presetItem.description}
+                                          </p>
+                                        ) : (
+                                          <p className="line-clamp-2 text-xs leading-5 text-[#526273] dark:text-slate-300">
+                                            {item.description}
+                                          </p>
+                                        )}
+                                        {isProtected && (
+                                          <p className="mt-1 mono text-[0.65rem] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                                            <Lock size={10} />
+                                            {isArabic
+                                              ? "لوحة مفاتيح / عنصر نظام حيوي محمي من التعطيل."
+                                              : "Critical keyboard or system component protected against removal."}
+                                          </p>
+                                        )}
                                         {item.neededBy.length > 0 && (
                                           <p className="mt-1 mono text-[0.64rem] text-[#934639]">
                                             {debloatCopy.neededBy} {item.neededBy.join(", ")}
@@ -1608,7 +1850,20 @@ export default function Home() {
                                         )}
                                       </td>
                                       <td className="px-3 py-3.5 text-right">
-                                        {item.status === "disabled" || item.status === "uninstalled" ? (
+                                        {isProtected ? (
+                                          <button
+                                            disabled
+                                            className="action-button h-7 px-2 text-xs border border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 opacity-80 cursor-not-allowed flex items-center gap-1 ml-auto"
+                                            title={
+                                              isArabic
+                                                ? "الحزمة محمية عالمياً ولا يمكن تعديلها منعاً لتعطل الجهاز."
+                                                : "Package is globally protected to prevent device issues."
+                                            }
+                                          >
+                                            <Lock size={11} />
+                                            <span>{isArabic ? "محمي" : "Protected"}</span>
+                                          </button>
+                                        ) : item.status === "disabled" || item.status === "uninstalled" ? (
                                           <Button
                                             variant="outline"
                                             size="sm"
@@ -1674,15 +1929,16 @@ export default function Home() {
                               <input
                                 type="checkbox"
                                 aria-label={isArabic ? "تحديد كل التطبيقات المعروضة" : "Select all visible packages"}
-                                checked={visibleCategorizedPackages.length > 0 && visibleCategorizedPackages.every((p) => selected.includes(p.id))}
+                                checked={visibleCategorizedPackages.filter((p) => !isPackageProtected(p.id)).length > 0 && visibleCategorizedPackages.filter((p) => !isPackageProtected(p.id)).every((p) => selected.includes(p.id))}
                                 ref={(el) => {
                                   if (el) {
-                                    const count = visibleCategorizedPackages.filter((p) => selected.includes(p.id)).length;
-                                    el.indeterminate = count > 0 && count < visibleCategorizedPackages.length;
+                                    const nonProtected = visibleCategorizedPackages.filter((p) => !isPackageProtected(p.id));
+                                    const count = nonProtected.filter((p) => selected.includes(p.id)).length;
+                                    el.indeterminate = count > 0 && count < nonProtected.length;
                                   }
                                 }}
                                 onChange={(e) => {
-                                  const visibleIds = visibleCategorizedPackages.map((p) => p.id);
+                                  const visibleIds = visibleCategorizedPackages.filter((p) => !isPackageProtected(p.id)).map((p) => p.id);
                                   if (e.target.checked) {
                                     setSelected((current) => Array.from(new Set([...current, ...visibleIds])));
                                   } else {
@@ -1690,7 +1946,7 @@ export default function Home() {
                                     setSelected((current) => current.filter((id) => !visibleIdSet.has(id)));
                                   }
                                 }}
-                                className="h-4 w-4 accent-[#14253a] cursor-pointer"
+                                className="h-4 w-4 accent-[#14253a] dark:accent-cyan-500 cursor-pointer"
                               />
                             </th>
                             <th className="px-3 py-3">{debloatCopy.category}</th>
@@ -1704,29 +1960,84 @@ export default function Home() {
                         <tbody>
                           {visibleCategorizedPackages.slice(0, 160).map((item) => {
                             const checked = selected.includes(item.id);
+                            const isProtected = isPackageProtected(item.id);
+                            const presetItem = presetItemMap.get(item.id);
+                            const itemTier = getPackageTier(item.id, item);
                             return (
-                              <tr key={item.id} className="border-t border-[#e5ded2] hover:bg-[#fbf8f1]">
+                              <tr key={item.id} className="border-t border-[#e5ded2] dark:border-slate-800 hover:bg-[#fbf8f1] dark:hover:bg-slate-800/50">
                                 <td className="px-4 py-3.5">
-                                  <input
-                                    aria-label={`${debloatCopy.reviewCommands} ${item.id}`}
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() =>
-                                      setSelected((current) =>
-                                        checked ? current.filter((id) => id !== item.id) : [...current, item.id]
-                                      )
-                                    }
-                                    className="h-4 w-4 accent-[#14253a]"
-                                  />
+                                  {isProtected ? (
+                                    <div
+                                      title={
+                                        isArabic
+                                          ? "حزمة محمية عالمياً لمنع تعطل لوحة المفاتيح أو النظام."
+                                          : "Globally protected package (keyboard / OS critical). Cannot be debloated."
+                                      }
+                                      className="flex items-center justify-center w-5 h-5 text-emerald-600 dark:text-emerald-400 bg-emerald-100/70 dark:bg-emerald-950/60 rounded border border-emerald-300 dark:border-emerald-700"
+                                    >
+                                      <Lock size={12} />
+                                    </div>
+                                  ) : (
+                                    <input
+                                      aria-label={`${debloatCopy.reviewCommands} ${item.id}`}
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() =>
+                                        setSelected((current) =>
+                                          checked ? current.filter((id) => id !== item.id) : [...current, item.id]
+                                        )
+                                      }
+                                      className="h-4 w-4 accent-[#14253a] dark:accent-cyan-500"
+                                    />
+                                  )}
                                 </td>
                                 <td className="px-3 py-3.5">
                                   <AppCategoryBadge category={item.category.id} language={language} short={true} />
                                 </td>
                                 <td className="px-3 py-3.5">
+                                  {presetItem && (
+                                    <div className="flex items-center gap-1.5 mb-0.5">
+                                      <span className="text-xs font-bold text-[#14253a] dark:text-slate-100">
+                                        {presetItem.name}
+                                      </span>
+                                      {presetItem.recommendedAction === "uninstall" ? (
+                                        <span className="mono text-[0.6rem] uppercase tracking-wider px-1 py-0.2 bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800 rounded font-semibold">
+                                          {isArabic ? "إلغاء تثبيت" : "Uninstall"}
+                                        </span>
+                                      ) : (
+                                        <span className="mono text-[0.6rem] uppercase tracking-wider px-1 py-0.2 bg-sky-100 dark:bg-sky-950/70 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800 rounded font-semibold">
+                                          {isArabic ? "تعطيل" : "Disable"}
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
                                   <p className="mono text-xs font-semibold">{item.id}</p>
-                                  <p className="mt-0.5 text-[0.67rem] text-[#687584]">
-                                    {item.list} {isArabic ? "قائمة" : "list"}
-                                  </p>
+                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                    <span className="text-[0.67rem] text-[#687584] dark:text-slate-400">
+                                      {item.list} {isArabic ? "قائمة" : "list"}
+                                    </span>
+                                    <span
+                                      className={`mono text-[0.62rem] px-1.5 py-0.2 rounded border font-semibold ${
+                                        itemTier === "safe"
+                                          ? "border-emerald-300 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300"
+                                          : itemTier === "telemetry"
+                                          ? "border-cyan-300 dark:border-cyan-800 bg-cyan-50 dark:bg-cyan-950/60 text-cyan-800 dark:text-cyan-300"
+                                          : "border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300"
+                                      }`}
+                                    >
+                                      {itemTier === "safe"
+                                        ? isArabic ? "آمن" : "Safe"
+                                        : itemTier === "telemetry"
+                                        ? isArabic ? "تتبع" : "Telemetry"
+                                        : isArabic ? "متقدم" : "Advanced"}
+                                    </span>
+                                    {isProtected && (
+                                      <span className="mono text-[0.62rem] px-1.5 py-0.2 rounded border border-emerald-500/80 bg-emerald-100 dark:bg-emerald-950 text-emerald-900 dark:text-emerald-200 font-bold flex items-center gap-0.5">
+                                        <Lock size={9} />
+                                        {isArabic ? "محمي عالمياً" : "Protected"}
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="px-3 py-3.5">
                                   <PackageStatusBadge status={item.status} rawState={item.rawState} language={language} />
@@ -1737,9 +2048,23 @@ export default function Home() {
                                   </span>
                                 </td>
                                 <td className="max-w-sm px-3 py-3.5">
-                                  <p className="line-clamp-2 text-xs leading-5 text-[#526273]">
-                                    {item.description}
-                                  </p>
+                                  {presetItem ? (
+                                    <p className="text-xs leading-5 text-[#526273] dark:text-slate-300 font-medium">
+                                      {presetItem.description}
+                                    </p>
+                                  ) : (
+                                    <p className="line-clamp-2 text-xs leading-5 text-[#526273] dark:text-slate-300">
+                                      {item.description}
+                                    </p>
+                                  )}
+                                  {isProtected && (
+                                    <p className="mt-1 mono text-[0.65rem] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                                      <Lock size={10} />
+                                      {isArabic
+                                        ? "لوحة مفاتيح / عنصر نظام حيوي محمي من التعطيل."
+                                        : "Critical keyboard or system component protected against removal."}
+                                    </p>
+                                  )}
                                   {item.neededBy.length > 0 && (
                                     <p className="mt-1 mono text-[0.64rem] text-[#934639]">
                                       {debloatCopy.neededBy} {item.neededBy.join(", ")}
@@ -1747,12 +2072,25 @@ export default function Home() {
                                   )}
                                 </td>
                                 <td className="px-3 py-3.5 text-right">
-                                  {item.status === "disabled" || item.status === "uninstalled" ? (
+                                  {isProtected ? (
+                                    <button
+                                      disabled
+                                      className="action-button h-7 px-2 text-xs border border-emerald-300 dark:border-emerald-800/80 bg-emerald-50/50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 opacity-80 cursor-not-allowed flex items-center gap-1 ml-auto"
+                                      title={
+                                        isArabic
+                                          ? "الحزمة محمية عالمياً ولا يمكن تعديلها منعاً لتعطل الجهاز."
+                                          : "Package is globally protected to prevent device issues."
+                                      }
+                                    >
+                                      <Lock size={11} />
+                                      <span>{isArabic ? "محمي" : "Protected"}</span>
+                                    </button>
+                                  ) : item.status === "disabled" || item.status === "uninstalled" ? (
                                     <Button
                                       variant="outline"
                                       size="sm"
                                       onClick={() => restore(item.id, item.status)}
-                                      className="action-button h-7 px-2 text-xs text-[#527321] border-[#b9da71] hover:bg-[#eef8cd]"
+                                      className="action-button h-7 px-2.5 text-xs text-[#527321] border-[#b9da71] hover:bg-[#eef8cd]"
                                       title={item.status === "uninstalled" ? "cmd package install-existing --user 0" : "pm enable"}
                                     >
                                       <RotateCcw size={12} className="mr-1" />
@@ -1765,7 +2103,7 @@ export default function Home() {
                                       variant="outline"
                                       size="sm"
                                       onClick={() => togglePackageStatus(item)}
-                                      className={`action-button h-7 px-2 text-xs ${
+                                      className={`action-button h-7 px-2.5 text-xs ${
                                         actionMode === "expert"
                                           ? "text-[#dc2626] border-[#fca5a5] hover:bg-[#fef2f2]"
                                           : actionMode === "advanced"
