@@ -20,7 +20,7 @@ import { ShortcutGuideDialog } from "@/components/ShortcutGuideDialog";
 import { WebUsbConnectionManager } from "@/components/WebUsbConnectionManager";
 import { LogcatViewer } from "@/components/LogcatViewer";
 import { createCaseId, exportTimestampedCaseBundle } from "@/lib/caseBundle";
-import { AlertTriangle, AppWindow, ArrowRight, ArrowUpDown, Bot, Boxes, Check, CheckCircle2, CheckSquare, ChevronRight, CircleAlert, ClipboardCheck, ClipboardList, Cpu, Download, Eye, EyeOff, FileArchive, FileText, Filter, Folder, HardDrive, History, HelpCircle, Info, Keyboard, Languages, Layers, ListFilter, Loader2, Lock, LockKeyhole, MonitorUp, Moon, PackageOpen, PauseCircle, PlugZap, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square, TerminalSquare, Trash2, Unplug, Upload, Usb, UsersRound, Sun, X } from "lucide-react";
+import { AlertTriangle, AppWindow, ArrowRight, ArrowUpDown, Bot, Boxes, Check, CheckCircle2, CheckSquare, ChevronRight, CircleAlert, ClipboardCheck, ClipboardList, Cpu, Download, Eye, EyeOff, FileArchive, FileText, Filter, Folder, HardDrive, History, HelpCircle, Info, Keyboard, Languages, Layers, ListFilter, Loader2, Lock, LockKeyhole, MonitorUp, Moon, PackageOpen, PauseCircle, Play, PlugZap, RefreshCw, RotateCcw, Search, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square, TerminalSquare, Trash2, Unplug, Upload, Usb, UsersRound, Sun, X } from "lucide-react";
 import GeminiChatWorkspace from "@/components/GeminiChatWorkspace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -234,11 +234,14 @@ export default function Home() {
     current: number;
     total: number;
     currentPkg: string;
-    action: DebloatExecutionLevel | "restore" | "disable" | "uninstall";
+    currentAction?: "uninstall" | "disable" | "restore";
+    action: DebloatExecutionLevel | "restore" | "disable" | "uninstall" | "batch";
     succeeded: string[];
     failed: Array<{ id: string; error: string }>;
+    skipped?: string[];
     aborted?: boolean;
   } | null>(null);
+  const [packageActionOverrides, setPackageActionOverrides] = useState<Record<string, "uninstall" | "disable">>({});
   const abortBulkRef = useRef(false);
 
   const activeReceiptArchive = useMemo(() => receiptArchives.find((archive) => archive.id === activeReceiptArchiveId) || receiptArchives[0], [receiptArchives, activeReceiptArchiveId]);
@@ -297,6 +300,14 @@ export default function Home() {
       return "advanced";
     }
     return "safe";
+  };
+
+  const getPackageAction = (pkgId: string): "uninstall" | "disable" => {
+    if (packageActionOverrides[pkgId]) return packageActionOverrides[pkgId];
+    const pItem = presetItemMap.get(pkgId);
+    if (pItem?.recommendedAction) return pItem.recommendedAction;
+    if (actionMode === "advanced" || actionMode === "expert") return "uninstall";
+    return "disable";
   };
 
   const categoryStats = useMemo(() => {
@@ -878,8 +889,209 @@ export default function Home() {
     }
   };
 
+  const executeSelectedActions = async () => {
+    if (!device || !isLive) {
+      toast.error(
+        isArabic
+          ? "يجب توصيل الجهاز وتفويضه عبر USB أولاً."
+          : "Connect and authorize an Android device via WebUSB first."
+      );
+      return;
+    }
+
+    const rawList = [...selected];
+    if (rawList.length === 0) {
+      toast.error(
+        isArabic
+          ? "لم يتم تحديد أي حزم للتنفيذ."
+          : "No packages checked to execute."
+      );
+      return;
+    }
+
+    // 1. Automatically skip and log any protected packages from GLOBAL_PROTECTED_PACKAGES
+    const actionableList: string[] = [];
+    const skippedProtectedList: string[] = [];
+
+    rawList.forEach((id) => {
+      if (isPackageProtected(id)) {
+        skippedProtectedList.push(id);
+        console.warn(`[Debloat Guardrail] Automatically skipped protected package: ${id}`);
+        addReceipt(
+          {
+            command: `# SKIPPED (PROTECTED): ${id}`,
+            stdout: `Automatically skipped protected package '${id}' (${GLOBAL_PROTECTED_PACKAGES.includes(id) ? "GLOBAL_PROTECTED_PACKAGES" : "Protected"}). Preserved critical system/keyboard component.`,
+            stderr: "",
+            exitCode: 0,
+            at: new Date().toISOString(),
+          },
+          `Skipped protected package: ${id}`,
+          "Browser"
+        );
+      } else {
+        actionableList.push(id);
+      }
+    });
+
+    if (skippedProtectedList.length > 0) {
+      toast.info(
+        isArabic
+          ? `تم استبعاد وتخطي ${skippedProtectedList.length} حزمة محمية عالمياً تلقائياً لحماية النظام.`
+          : `Skipped ${skippedProtectedList.length} globally protected package(s) to protect system.`
+      );
+    }
+
+    if (actionableList.length === 0) {
+      toast.warning(
+        isArabic
+          ? "جميع الحزم المحددة محمية عالمياً، لم يتم تنفيذ أي عملية."
+          : "All checked packages are globally protected; nothing was executed."
+      );
+      setSelected([]);
+      return;
+    }
+
+    setReviewOpen(false);
+    abortBulkRef.current = false;
+    setBulkExecuting(true);
+
+    const total = actionableList.length;
+    const succeededList: string[] = [];
+    const failedList: Array<{ id: string; error: string }> = [];
+
+    // Initialize progress display
+    setBulkProgress({
+      current: 0,
+      total,
+      currentPkg: actionableList[0],
+      currentAction: getPackageAction(actionableList[0]),
+      action: "batch",
+      succeeded: [],
+      failed: [],
+      skipped: [...skippedProtectedList],
+    });
+
+    for (let i = 0; i < total; i++) {
+      if (abortBulkRef.current) {
+        setBulkProgress((prev) => (prev ? { ...prev, aborted: true } : null));
+        toast.info(
+          isArabic ? "تم إيقاف تنفيذ العمليات المتبقية." : "Batch execution aborted by user.",
+          { id: "batch-exec-status" }
+        );
+        break;
+      }
+
+      const id = actionableList[i];
+      const action = getPackageAction(id);
+
+      // Real-time status toast showing real-time progress (e.g. "Processing 5/18...")
+      toast.loading(
+        isArabic
+          ? `جارٍ المعالجة ${i + 1}/${total}... (${id})`
+          : `Processing ${i + 1}/${total}... (${id})`,
+        { id: "batch-exec-status" }
+      );
+
+      // Update real-time progress bar state
+      setBulkProgress((prev) =>
+        prev
+          ? {
+              ...prev,
+              current: i + 1,
+              currentPkg: id,
+              currentAction: action,
+            }
+          : null
+      );
+
+      try {
+        let result: CommandResult;
+        if (action === "uninstall") {
+          // Run `pm uninstall -k --user 0 <package>` for uninstall actions
+          result = await adb.current.uninstallKeepData(id);
+          const restoreCmd = `cmd package install-existing ${id}`;
+          addReceipt(result, `Uninstall -k: ${id} for User 0`, "USB", restoreCmd, false);
+          if (result.exitCode === 0) {
+            succeededList.push(id);
+            setUninstalledPackages((current) => Array.from(new Set([...current, id])));
+            setDisabledPackages((current) => current.filter((pkgId) => pkgId !== id));
+          } else {
+            failedList.push({ id, error: result.stderr || "Non-zero exit code" });
+          }
+        } else {
+          // Run `pm disable-user --user 0 <package>` for disable actions
+          result = await adb.current.disablePackage(id);
+          const restoreCmd = `pm enable ${id}`;
+          addReceipt(result, `Disable: ${id} for User 0`, "USB", restoreCmd, false);
+          if (result.exitCode === 0) {
+            succeededList.push(id);
+            setDisabledPackages((current) => Array.from(new Set([...current, id])));
+            setUninstalledPackages((current) => current.filter((pkgId) => pkgId !== id));
+          } else {
+            failedList.push({ id, error: result.stderr || "Non-zero exit code" });
+          }
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "Command failed";
+        failedList.push({ id, error: detail });
+        addReceipt(
+          {
+            command: `${action === "uninstall" ? "pm uninstall -k --user 0" : "pm disable-user --user 0"} ${id}`,
+            stdout: "",
+            stderr: detail,
+            exitCode: 1,
+            at: new Date().toISOString(),
+          },
+          `Failed action on ${id}`,
+          "USB",
+          undefined,
+          false
+        );
+      }
+
+      setBulkProgress((prev) =>
+        prev
+          ? {
+              ...prev,
+              succeeded: [...succeededList],
+              failed: [...failedList],
+            }
+          : null
+      );
+
+      // Yield briefly to avoid saturating WebUSB and ensure UI updates
+      await new Promise((r) => setTimeout(r, 20));
+    }
+
+    // Deselect all succeeded and skipped packages
+    setSelected((curr) => curr.filter((id) => !succeededList.includes(id) && !skippedProtectedList.includes(id)));
+    setBulkExecuting(false);
+
+    // Final status toast & notification
+    if (succeededList.length > 0) {
+      toast.success(
+        isArabic
+          ? `اكتمل تنفيذ الإجراءات المحددة: نجح ${succeededList.length} من ${total}${failedList.length > 0 ? `، وفشل ${failedList.length}` : ""}.`
+          : `Batch actions complete: ${succeededList.length} of ${total} succeeded${failedList.length > 0 ? `, ${failedList.length} failed` : ""}.`,
+        { id: "batch-exec-status", duration: 5000 }
+      );
+      void refreshPackageStatus();
+    } else if (failedList.length > 0) {
+      toast.error(
+        isArabic
+          ? `فشل تنفيذ الإجراءات لـ ${failedList.length} تطبيق.`
+          : `Batch actions failed for ${failedList.length} packages.`,
+        { id: "batch-exec-status", duration: 5000 }
+      );
+    }
+  };
+
   const runQueued = async () => {
-    await executeBulkAction(actionMode);
+    if (actionMode === "restore") {
+      await executeBulkAction("restore");
+    } else {
+      await executeSelectedActions();
+    }
   };
 
   const restore = async (id: string, currentStatus?: PackageStatus | string) => {
@@ -2141,102 +2353,48 @@ export default function Home() {
                 )}
 
                 {/* Bottom Action Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-3 border border-[#d8d1c4] bg-[#f3efe6] p-4 shadow-xs">
+                <div className="flex flex-wrap items-center justify-between gap-3 border border-[#d8d1c4] dark:border-slate-800 bg-[#f3efe6] dark:bg-slate-900/90 p-4 shadow-xs">
                   <div className="flex items-center gap-3">
-                    <p className="text-xs text-[#526273]">
-                      <span className="font-bold text-[#14253a]">{visibleCategorizedPackages.length}</span> {debloatCopy.matched} ·{" "}
-                      <span className="font-bold text-[#14253a]">{selected.length}</span> {debloatCopy.selected}
+                    <p className="text-xs text-[#526273] dark:text-slate-300">
+                      <span className="font-bold text-[#14253a] dark:text-slate-100">{visibleCategorizedPackages.length}</span> {debloatCopy.matched} ·{" "}
+                      <span className="font-bold text-[#14253a] dark:text-slate-100">{selected.length}</span> {debloatCopy.selected}
                     </p>
                     {selected.length > 0 && (
                       <button
                         onClick={() => setSelected([])}
-                        className="text-[0.68rem] text-[#934639] underline hover:text-[#6d3d35]"
+                        className="text-[0.68rem] text-[#934639] dark:text-rose-400 underline hover:text-[#6d3d35] cursor-pointer"
                       >
                         {isArabic ? "مسح التحديد" : "Clear selection"}
                       </button>
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {/* Direct Quick Bulk Action buttons */}
-                    {selected.length > 0 && (
-                      <>
-                        {actionMode !== "restore" ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={bulkExecuting}
-                            onClick={() => executeBulkAction(actionMode)}
-                            className={`action-button h-9 text-xs font-semibold ${
-                              actionMode === "expert"
-                                ? "border-[#fca5a5] text-[#b91c1c] hover:bg-[#fef2f2]"
-                                : actionMode === "advanced"
-                                ? "border-[#fed7aa] text-[#c2410c] hover:bg-[#fff7ed]"
-                                : "border-[#dba193] text-[#934639] hover:bg-[#fbe5df]"
-                            }`}
-                            title={
-                              actionMode === "expert"
-                                ? "pm uninstall --user 0"
-                                : actionMode === "advanced"
-                                ? "pm uninstall -k --user 0"
-                                : "pm disable-user --user 0"
-                            }
-                          >
-                            {actionMode === "expert" ? (
-                              <Trash2 size={14} className="mr-1 text-[#dc2626]" />
-                            ) : (
-                              <PauseCircle size={14} className="mr-1 text-[#c2362b]" />
-                            )}
-                            {actionMode === "expert"
-                              ? (isArabic ? "إزالة كاملة للمحدد" : "Purge Selected")
-                              : actionMode === "advanced"
-                              ? (isArabic ? "إلغاء تثبيت المحدد" : "Uninstall Selected")
-                              : (isArabic ? "تعطيل المحدد" : "Disable Selected")}{" "}
-                            ({selected.length})
-                          </Button>
-                        ) : null}
-
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={bulkExecuting}
-                          onClick={() => executeBulkAction("restore")}
-                          className="action-button h-9 text-xs border-[#b9da71] text-[#527321] hover:bg-[#eef8cd]"
-                          title={isArabic ? "استعادة الحزم المحددة للمستخدم 0" : "Re-enable/Restore selected packages for User 0"}
-                        >
-                          <RotateCcw size={14} className="mr-1 text-[#527321]" />
-                          {isArabic ? "استعادة المحدد" : "Restore Selected"} ({selected.length})
-                        </Button>
-                      </>
-                    )}
-
-                    <select
-                      value={actionMode}
-                      onChange={(event) => {
-                        setActionMode(event.target.value as DebloatExecutionLevel | "restore");
-                        setExpertAckCheckbox(false);
-                      }}
-                      className="h-9 border border-[#d8d1c4] bg-[#fffdf8] px-2.5 text-xs font-semibold outline-none focus:border-[#14253a]"
+                    {/* Single "Execute Selected Actions" batch button */}
+                    <Button
+                      disabled={bulkExecuting || selected.length === 0}
+                      onClick={executeSelectedActions}
+                      className="action-button h-9 px-4 text-xs font-bold bg-[#14253a] text-white hover:bg-[#223952] dark:bg-cyan-600 dark:hover:bg-cyan-500 shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
                     >
-                      <option value="safe">
-                        {isArabic ? "آمن (تعطيل للمستخدم 0)" : "Safe (Disable)"} — pm disable-user
-                      </option>
-                      <option value="advanced">
-                        {isArabic ? "متقدم (إلغاء وإبقاء البيانات)" : "Advanced (Uninstall & Keep Data)"} — pm uninstall -k
-                      </option>
-                      <option value="expert">
-                        {isArabic ? "خبير (إزالة كاملة)" : "Expert (Full Purge)"} — pm uninstall
-                      </option>
-                      <option value="restore">
-                        {isArabic ? "استعادة تكيفية" : "Restore / Re-enable (Adaptive)"}
-                      </option>
-                    </select>
+                      {bulkExecuting ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <Play size={14} className="fill-current text-[#c8f04a] dark:text-cyan-200" />
+                      )}
+                      <span>{isArabic ? "تنفيذ الإجراءات المحددة" : "Execute Selected Actions"}</span>
+                      {selected.length > 0 && (
+                        <span className="mono bg-white/20 dark:bg-black/30 px-1.5 py-0.5 rounded text-[0.7rem] font-bold">
+                          {selected.length}
+                        </span>
+                      )}
+                    </Button>
 
                     <Button
                       onClick={() => setReviewOpen(true)}
                       disabled={!selected.length || bulkExecuting}
-                      className="action-button h-9 bg-[#14253a] text-[#f6f2ea] hover:bg-[#223952]"
+                      variant="outline"
+                      className="action-button h-9 border-[#d8d1c4] dark:border-slate-700 text-xs text-[#14253a] dark:text-slate-200 hover:bg-[#eae4d5] dark:hover:bg-slate-800"
                     >
-                      {debloatCopy.reviewCommands} ({selected.length})
+                      {debloatCopy.reviewCommands}
                       <ArrowRight className="ml-1.5" size={14} />
                     </Button>
                   </div>
@@ -2244,59 +2402,43 @@ export default function Home() {
 
                 {/* Floating Bulk Action Bar when items are selected */}
                 {selected.length > 0 && (
-                  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-2.5 border border-[#14253a] bg-[#14253a] text-white px-4 py-2.5 shadow-2xl rounded-xs">
-                    <span className="mono text-xs font-semibold flex items-center gap-1.5 text-[#c8f04a]">
+                  <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex flex-wrap items-center gap-2.5 border border-[#14253a] dark:border-slate-700 bg-[#14253a] dark:bg-slate-900 text-white px-4 py-2.5 shadow-2xl rounded-xs">
+                    <span className="mono text-xs font-semibold flex items-center gap-1.5 text-[#c8f04a] dark:text-cyan-300">
                       <CheckSquare size={14} />
                       {selected.length} {isArabic ? "حزم محددة" : "selected"}
                     </span>
-                    <div className="h-4 w-px bg-[#2f4860]" />
-                    {actionMode !== "restore" ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={bulkExecuting}
-                        onClick={() => executeBulkAction(actionMode)}
-                        className={`action-button h-7 px-2.5 text-xs bg-[#fffdf8] font-semibold ${
-                          actionMode === "expert"
-                            ? "border-[#fca5a5] text-[#b91c1c] hover:bg-[#fee2e2]"
-                            : actionMode === "advanced"
-                            ? "border-[#fed7aa] text-[#c2410c] hover:bg-[#fff7ed]"
-                            : "border-[#dba193] text-[#934639] hover:bg-[#fbe5df]"
-                        }`}
-                      >
-                        {actionMode === "expert" ? (
-                          <Trash2 size={12} className="mr-1 text-[#dc2626]" />
-                        ) : (
-                          <PauseCircle size={12} className="mr-1" />
-                        )}
-                        {actionMode === "expert"
-                          ? (isArabic ? "إزالة كاملة" : "Purge All")
-                          : actionMode === "advanced"
-                          ? (isArabic ? "إلغاء التثبيت" : "Uninstall (-k)")
-                          : (isArabic ? "تعطيل الكل" : "Disable All")}
-                      </Button>
-                    ) : null}
+                    <div className="h-4 w-px bg-[#2f4860] dark:bg-slate-700" />
+                    
+                    {/* Single "Execute Selected Actions" batch button */}
+                    <Button
+                      size="sm"
+                      disabled={bulkExecuting}
+                      onClick={executeSelectedActions}
+                      className="action-button h-8 px-3 text-xs bg-[#c8f04a] text-[#14253a] hover:bg-[#d7f66c] dark:bg-cyan-500 dark:text-slate-950 dark:hover:bg-cyan-400 font-bold flex items-center gap-1.5 shadow-sm cursor-pointer"
+                    >
+                      {bulkExecuting ? (
+                        <Loader2 size={13} className="animate-spin" />
+                      ) : (
+                        <Play size={13} className="fill-current" />
+                      )}
+                      <span>{isArabic ? "تنفيذ الإجراءات المحددة" : "Execute Selected Actions"}</span>
+                      <span className="mono bg-black/15 dark:bg-black/25 px-1.5 py-0.2 rounded text-[0.68rem]">
+                        ({selected.length})
+                      </span>
+                    </Button>
+
                     <Button
                       size="sm"
                       variant="outline"
                       disabled={bulkExecuting}
-                      onClick={() => executeBulkAction("restore")}
-                      className="action-button h-7 px-2.5 text-xs border-[#b9da71] bg-[#fffdf8] text-[#527321] hover:bg-[#eef8cd]"
-                    >
-                      <RotateCcw size={12} className="mr-1" />
-                      {isArabic ? "استعادة الكل" : "Restore All"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={bulkExecuting}
                       onClick={() => setReviewOpen(true)}
-                      className="action-button h-7 px-2.5 text-xs bg-[#c8f04a] text-[#14253a] hover:bg-[#d7f66c] font-bold"
+                      className="action-button h-8 px-2.5 text-xs border-slate-600 dark:border-slate-700 text-slate-200 hover:bg-slate-800"
                     >
-                      {isArabic ? "مراجعة وتشغيل" : "Review & Run"}
+                      {isArabic ? "مراجعة" : "Review"}
                     </Button>
                     <button
                       onClick={() => setSelected([])}
-                      className="text-xs text-[#a6b3be] hover:text-white ml-1 p-1"
+                      className="text-xs text-[#a6b3be] hover:text-white ml-1 p-1 cursor-pointer"
                       title={isArabic ? "إلغاء التحديد" : "Deselect all"}
                     >
                       <X size={14} />
@@ -2308,27 +2450,31 @@ export default function Home() {
 
             {/* Bulk Execution Progress Modal */}
             {bulkProgress && (
-              <div className="fixed inset-0 z-50 grid place-items-center bg-[#14253a]/60 p-4 backdrop-blur-xs">
-                <div className="w-full max-w-lg border border-[#14253a] bg-[#fffdf8] shadow-2xl p-6">
-                  <div className="flex items-start justify-between border-b border-[#d8d1c4] pb-4">
+              <div className="fixed inset-0 z-50 grid place-items-center bg-[#14253a]/60 dark:bg-black/80 p-4 backdrop-blur-xs">
+                <div className="w-full max-w-lg border border-[#14253a] dark:border-slate-700 bg-[#fffdf8] dark:bg-slate-900 shadow-2xl p-6">
+                  <div className="flex items-start justify-between border-b border-[#d8d1c4] dark:border-slate-800 pb-4">
                     <div className="flex items-center gap-3">
                       {bulkExecuting ? (
-                        <Loader2 className="animate-spin text-[#14253a]" size={22} />
+                        <Loader2 className="animate-spin text-[#14253a] dark:text-cyan-400" size={22} />
                       ) : (
-                        <CheckCircle2 className="text-[#3f7a18]" size={22} />
+                        <CheckCircle2 className="text-[#3f7a18] dark:text-emerald-400" size={22} />
                       )}
                       <div>
-                        <h3 className="text-base font-bold tracking-[-0.03em] text-[#14253a]">
+                        <h3 className="text-base font-bold tracking-[-0.03em] text-[#14253a] dark:text-slate-100">
                           {bulkExecuting
                             ? isArabic
-                              ? "جارٍ تنفيذ العملية المجمعة..."
-                              : "Executing Bulk Operation..."
+                              ? `جارٍ تنفيذ الإجراءات المحددة (${bulkProgress.current}/${bulkProgress.total})...`
+                              : `Executing Batch Actions (${bulkProgress.current}/${bulkProgress.total})...`
                             : isArabic
-                            ? "اكتملت العملية المجمعة"
-                            : "Bulk Operation Complete"}
+                            ? "اكتمل تنفيذ الإجراءات المحددة"
+                            : "Batch Execution Finished"}
                         </h3>
-                        <p className="text-xs text-[#526273] mt-0.5">
-                          {bulkProgress.action === "disable"
+                        <p className="text-xs text-[#526273] dark:text-slate-300 mt-0.5">
+                          {bulkProgress.action === "batch"
+                            ? isArabic
+                              ? "تنفيذ متسلسل عبر جلسة WebUSB ADB (مع تخطي الحزم المحمية تلقائياً)"
+                              : "Sequential WebUSB ADB batch execution (with protected packages guardrail)"
+                            : bulkProgress.action === "disable"
                             ? isArabic
                               ? "تعطيل للمستخدم 0 (قابل للاستعادة)"
                               : "Disable for User 0 (Reversible)"
@@ -2346,7 +2492,7 @@ export default function Home() {
                     {!bulkExecuting && (
                       <button
                         onClick={() => setBulkProgress(null)}
-                        className="p-1 text-[#687584] hover:text-[#14253a]"
+                        className="p-1 text-[#687584] dark:text-slate-400 hover:text-[#14253a] dark:hover:text-white cursor-pointer"
                         aria-label="Close"
                       >
                         <X size={18} />
@@ -2357,50 +2503,62 @@ export default function Home() {
                   {/* Progress Bar & Counters */}
                   <div className="mt-5 space-y-2">
                     <div className="flex justify-between text-xs font-semibold">
-                      <span className="mono text-[#14253a]">
+                      <span className="mono text-[#14253a] dark:text-slate-200">
                         {isArabic ? "التقدم:" : "Progress:"} {bulkProgress.current} / {bulkProgress.total} (
                         {Math.round((bulkProgress.current / bulkProgress.total) * 100)}%)
                       </span>
-                      <span className="mono text-[#526273]">
-                        {bulkProgress.succeeded.length} {isArabic ? "نجح" : "succeeded"}
+                      <div className="mono flex items-center gap-2 text-[#526273] dark:text-slate-400">
+                        <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
+                          {bulkProgress.succeeded.length} {isArabic ? "نجح" : "succeeded"}
+                        </span>
                         {bulkProgress.failed.length > 0 && (
-                          <span className="text-[#c2362b] ml-1.5">
+                          <span className="text-[#c2362b] dark:text-rose-400 font-semibold">
                             · {bulkProgress.failed.length} {isArabic ? "فشل" : "failed"}
                           </span>
                         )}
-                      </span>
+                        {(bulkProgress.skipped?.length || 0) > 0 && (
+                          <span className="text-amber-700 dark:text-amber-400 font-semibold">
+                            · {bulkProgress.skipped?.length} {isArabic ? "تخطي محمي" : "skipped"}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="h-3 w-full bg-[#eee7da] overflow-hidden border border-[#d8d1c4]">
+                    <div className="h-3 w-full bg-[#eee7da] dark:bg-slate-800 overflow-hidden border border-[#d8d1c4] dark:border-slate-700">
                       <div
-                        className="h-full bg-[#14253a] transition-all duration-150"
+                        className="h-full bg-[#14253a] dark:bg-cyan-500 transition-all duration-150"
                         style={{ width: `${(bulkProgress.current / bulkProgress.total) * 100}%` }}
                       />
                     </div>
 
                     {bulkExecuting && bulkProgress.currentPkg && (
-                      <div className="mono text-xs text-[#526273] bg-[#f8f5ee] border border-[#d8d1c4] p-2 mt-2 truncate">
-                        <span className="text-[#8e9eae] mr-2">{isArabic ? "الحزمة الحالية:" : "Target:"}</span>
-                        {bulkProgress.currentPkg}
+                      <div className="mono text-xs text-[#526273] dark:text-slate-300 bg-[#f8f5ee] dark:bg-slate-800/80 border border-[#d8d1c4] dark:border-slate-700 p-2 mt-2 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#8e9eae] dark:text-slate-400 font-bold">{isArabic ? "الحزمة الحالية:" : "Target:"}</span>
+                          <span className="text-[0.68rem] font-semibold px-1.5 py-0.5 rounded bg-[#14253a] text-white dark:bg-cyan-950 dark:text-cyan-300 border border-transparent dark:border-cyan-800">
+                            {bulkProgress.currentAction === "uninstall" ? "pm uninstall -k --user 0" : "pm disable-user --user 0"}
+                          </span>
+                        </div>
+                        <p className="truncate font-bold text-[#14253a] dark:text-slate-100">{bulkProgress.currentPkg}</p>
                       </div>
                     )}
 
                     {bulkProgress.aborted && (
-                      <p className="text-xs text-[#934639] font-semibold mt-1">
+                      <p className="text-xs text-[#934639] dark:text-rose-400 font-semibold mt-1">
                         {isArabic ? "تم إيقاف العمليات المتبقية." : "Remaining operations were aborted."}
                       </p>
                     )}
                   </div>
 
                   {/* Action buttons */}
-                  <div className="mt-6 flex justify-end gap-2 border-t border-[#eee7da] pt-4">
+                  <div className="mt-6 flex justify-end gap-2 border-t border-[#eee7da] dark:border-slate-800 pt-4">
                     {bulkExecuting ? (
                       <Button
                         variant="outline"
                         onClick={() => {
                           abortBulkRef.current = true;
                         }}
-                        className="action-button border-[#dba193] text-[#c2362b] hover:bg-[#fbe5df] text-xs"
+                        className="action-button border-[#dba193] dark:border-rose-800 text-[#c2362b] dark:text-rose-400 hover:bg-[#fbe5df] dark:hover:bg-rose-950/50 text-xs cursor-pointer"
                       >
                         <X size={14} className="mr-1" />
                         {isArabic ? "إيقاف مؤقت للعمليات المتبقية" : "Abort Remaining"}
@@ -2408,7 +2566,7 @@ export default function Home() {
                     ) : (
                       <Button
                         onClick={() => setBulkProgress(null)}
-                        className="action-button bg-[#14253a] text-white hover:bg-[#223952] text-xs"
+                        className="action-button bg-[#14253a] dark:bg-cyan-600 text-white hover:bg-[#223952] dark:hover:bg-cyan-500 text-xs cursor-pointer"
                       >
                         {isArabic ? "تم وإغلاق" : "Done"}
                       </Button>
