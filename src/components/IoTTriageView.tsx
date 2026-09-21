@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import type { Adb } from '@yume-chan/adb';
 import JSZip from 'jszip';
-import { ShieldAlert, Search, Play, Square, Info, RefreshCw, Layers } from 'lucide-react';
+import { ShieldAlert, Search, Play, Square, Info, RefreshCw, Layers, BookOpen, X, CheckCircle2, TerminalSquare, Eye, Key } from 'lucide-react';
 
 /* =========================================================================
    1. TYPES & INTERFACES
@@ -364,6 +364,7 @@ export function renderPrivacyZonesOnCanvas(
 export const IoTTriageView: React.FC<IoTTriageViewProps> = ({ adb, isConnected }) => {
   const [activeTab, setActiveTab] = useState<'preflight' | 'apk' | 'sniffer' | 'visualizer'>('preflight');
   const [targetPackage, setTargetPackage] = useState<string>('com.fnk.fnk');
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   const [isAssessing, setIsAssessing] = useState(false);
   const [assessment, setAssessment] = useState<PreFlightAssessment | null>(null);
@@ -495,6 +496,14 @@ export const IoTTriageView: React.FC<IoTTriageViewProps> = ({ adb, isConnected }
             placeholder="Target package (e.g. com.fnk.fnk)"
             className="bg-slate-900 border border-slate-700 text-slate-100 px-3 py-1.5 rounded text-sm w-64 focus:border-cyan-500 focus:outline-none"
           />
+          <button
+            onClick={() => setIsGuideOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 hover:border-slate-600 rounded text-sm font-medium transition cursor-pointer shadow-sm"
+            title="Open User Guide & Standard Operating Procedure (SOP)"
+          >
+            <BookOpen className="w-4 h-4 text-cyan-400" />
+            <span className="hidden sm:inline">User Guide / SOP</span>
+          </button>
         </div>
       </div>
 
@@ -856,6 +865,234 @@ export const IoTTriageView: React.FC<IoTTriageViewProps> = ({ adb, isConnected }
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* User Guide / SOP Modal */}
+      {isGuideOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in"
+          onClick={() => setIsGuideOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-4xl max-h-[88vh] flex flex-col bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-cyan-950/60 text-cyan-400 border border-cyan-800/80 rounded-lg">
+                  <BookOpen className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                    IoT DFIR Triage Standard Operating Procedure (SOP)
+                    <span className="text-[11px] font-mono font-normal bg-cyan-950 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded">
+                      Tuya / ThingClips
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Forensic workflow for non-invasive companion app triage, SDK inspection, and Data Point analysis.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsGuideOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-lg transition"
+                aria-label="Close Guide"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="overflow-y-auto p-6 space-y-6 text-sm text-slate-300">
+              {/* Section 1: Overview & Objective */}
+              <section className="space-y-3">
+                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 text-xs font-bold">1</span>
+                  <h3 className="font-semibold text-slate-100 text-sm tracking-wide">Overview & Forensic Objective</h3>
+                </div>
+                <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-800 space-y-2 text-xs leading-relaxed text-slate-300">
+                  <p>
+                    Consumer and enterprise smart cameras often run proprietary firmware paired with white-labeled companion applications powered by the <strong className="text-slate-100">Tuya Smart</strong> or <strong className="text-slate-100">ThingClips</strong> IoT platform (e.g., FNK, Smart Life, Geeni, Gosund, BlitzWolf).
+                  </p>
+                  <p>
+                    The primary objective of this module is to conduct <strong className="text-cyan-300">rapid, non-invasive digital forensic and incident triage (DFIR)</strong> via WebUSB ADB without corrupting flash storage integrity or voiding hardware evidence chains:
+                  </p>
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 text-slate-300">
+                    <li className="flex items-start gap-1.5">
+                      <span className="text-cyan-400 font-bold">•</span>
+                      <span><strong className="text-slate-100">Extraction Feasibility:</strong> Safely evaluate sandbox privilege barriers (root, debuggable, allowBackup) before attempting extraction.</span>
+                    </li>
+                    <li className="flex items-start gap-1.5">
+                      <span className="text-cyan-400 font-bold">•</span>
+                      <span><strong className="text-slate-100">In-Memory APK Auditing:</strong> Inspect installed application packages for Tuya SDK footprints, tracking endpoints, and privacy keywords without writing to disk.</span>
+                    </li>
+                    <li className="flex items-start gap-1.5">
+                      <span className="text-cyan-400 font-bold">•</span>
+                      <span><strong className="text-slate-100">Real-Time Data Point Sniffing:</strong> Capture and decode Tuya Data Point (DP) command and telemetry streams directly from Logcat.</span>
+                    </li>
+                    <li className="flex items-start gap-1.5">
+                      <span className="text-cyan-400 font-bold">•</span>
+                      <span><strong className="text-slate-100">Privacy Zone Verification:</strong> Decode and visually reconstruct camera occlusion coordinates (DP 149) on an interactive canvas to verify masking boundaries.</span>
+                    </li>
+                  </ul>
+                </div>
+              </section>
+
+              {/* Section 2: Step-by-Step SOP */}
+              <section className="space-y-3">
+                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 text-xs font-bold">2</span>
+                  <h3 className="font-semibold text-slate-100 text-sm tracking-wide">Step-by-Step SOP (Standard Operating Procedure)</h3>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="bg-slate-800/60 p-3.5 rounded-lg border border-slate-700/70 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                        Phase 1: Pre-Flight Assessment
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">dumpsys + getprop + su</span>
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      Enter the target package name in the header input (default: <code className="text-cyan-300 bg-slate-900 px-1 py-0.5 rounded">com.fnk.fnk</code>) and click <strong>Assess Feasibility</strong>. The engine inspects Android SDK version (<code className="text-slate-300">ro.build.version.sdk</code>), root context (`su -c id`), <code className="text-slate-300">DEBUGGABLE</code> status, and <code className="text-slate-300">ALLOW_BACKUP</code> flags. Review the recommended extraction strategy before executing invasive procedures.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-800/60 p-3.5 rounded-lg border border-slate-700/70 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                        Phase 2: Memory-Safe APK Inspector
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">pm path + sync + in-memory zip</span>
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      Switch to the <strong>APK Inspector</strong> tab and click <strong>Pull & Inspect APK</strong>. The browser directly streams the device’s <code className="text-slate-300">base.apk</code> over WebUSB ADB sync into browser RAM. JSZip unzips the APK and scans <code className="text-slate-300">AndroidManifest.xml</code>, compiled resources, and <code className="text-slate-300">.dex</code> byte tables for Tuya/ThingClips SDK footprints, telemetry endpoints, and privacy keywords.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-800/60 p-3.5 rounded-lg border border-slate-700/70 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                        Phase 3: Live Data Point (DP) Sniffer
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">logcat -v time | publishDps / onDpUpdate</span>
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      Switch to the <strong>Live DP Sniffer</strong> tab and click <strong>Start DP Sniffer</strong>. The tool attaches a background Logcat reader filtering for <code className="text-cyan-300">publishDps</code> and <code className="text-cyan-300">onDpUpdate</code> payloads. Interact with the companion app or physical camera (toggle privacy mode, turn on night vision, trigger motion) to observe structured DPs as they fire.
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-800/60 p-3.5 rounded-lg border border-slate-700/70 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+                        Phase 4: Privacy Zone Coordinate Visualizer
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">DP 149 / DP 169 canvas projection</span>
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      Switch to the <strong>Privacy Zone Visualizer</strong>. If DP 149 payloads were captured in the sniffer, load the normalized coordinates into the visualizer. You can inspect whether configured privacy occlusion zones fully cover sensitive optical viewing angles or leave perimeter surveillance gaps.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              {/* Section 3: Tuya Data Points (DPs) Reference Cheat-Sheet */}
+              <section className="space-y-3">
+                <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+                  <span className="flex items-center justify-center w-5 h-5 rounded-full bg-cyan-500/20 text-cyan-400 text-xs font-bold">3</span>
+                  <h3 className="font-semibold text-slate-100 text-sm tracking-wide">Tuya Data Points (DPs) Reference Cheat-Sheet</h3>
+                </div>
+
+                <div className="border border-slate-800 rounded-lg overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-950 text-slate-400 font-mono text-[11px] border-b border-slate-800">
+                      <tr>
+                        <th className="p-2.5">DP ID</th>
+                        <th className="p-2.5">Function Identifier</th>
+                        <th className="p-2.5">Data Type</th>
+                        <th className="p-2.5">Forensic Significance & Behavior</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800 bg-slate-900/60 font-sans">
+                      <tr className="hover:bg-slate-800/40">
+                        <td className="p-2.5 font-mono font-bold text-cyan-300">DP 105</td>
+                        <td className="p-2.5 font-mono text-slate-200">basic_private</td>
+                        <td className="p-2.5 text-slate-400">Boolean</td>
+                        <td className="p-2.5 text-slate-300">
+                          <strong className="text-slate-100">Privacy Mode Toggle:</strong> <code className="text-emerald-300">true</code> cuts video stream and drops lens / shutter down; <code className="text-rose-300">false</code> resumes active monitoring. Critical for proving whether surveillance was active during an incident timeframe.
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-slate-800/40">
+                        <td className="p-2.5 font-mono font-bold text-cyan-300">DP 149</td>
+                        <td className="p-2.5 font-mono text-slate-200">privacy_zone_set_point</td>
+                        <td className="p-2.5 text-slate-400">String / JSON</td>
+                        <td className="p-2.5 text-slate-300">
+                          <strong className="text-slate-100">Privacy Mask Coordinates:</strong> Encodes normalized bounding coordinates <code className="text-slate-200">{`{x, y, w, h}`}</code> defining areas obscured with black or pixelated masks. Used to establish evidence of intentional visual blackout.
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-slate-800/40">
+                        <td className="p-2.5 font-mono font-bold text-cyan-300">DP 106</td>
+                        <td className="p-2.5 font-mono text-slate-200">basic_flip</td>
+                        <td className="p-2.5 text-slate-400">Boolean</td>
+                        <td className="p-2.5 text-slate-300">
+                          <strong className="text-slate-100">Video Image Flip:</strong> Inverts video feed 180°. Corroborates physical camera mounting position (ceiling inverted vs. upright surface).
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-slate-800/40">
+                        <td className="p-2.5 font-mono font-bold text-cyan-300">DP 108</td>
+                        <td className="p-2.5 font-mono text-slate-200">basic_nightvision</td>
+                        <td className="p-2.5 text-slate-400">Enum (0/1/2)</td>
+                        <td className="p-2.5 text-slate-300">
+                          <strong className="text-slate-100">Night Vision / IR Mode:</strong> <code className="text-slate-200">0=Auto</code>, <code className="text-slate-200">1=Force Off</code>, <code className="text-slate-200">2=Force On</code>. Explains IR illumination status and optical cut filter states in low-light evidence captures.
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-slate-800/40">
+                        <td className="p-2.5 font-mono font-bold text-cyan-300">DP 115</td>
+                        <td className="p-2.5 font-mono text-slate-200">movement_detect_pic</td>
+                        <td className="p-2.5 text-slate-400">String / Base64</td>
+                        <td className="p-2.5 text-slate-300">
+                          <strong className="text-slate-100">Motion Detection Snapshot:</strong> Dispatched when hardware PIR or computer vision detects motion. Contains encrypted image key or base64 snapshot transmitted to cloud or local log.
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-slate-800/40">
+                        <td className="p-2.5 font-mono font-bold text-cyan-300">DP 150</td>
+                        <td className="p-2.5 font-mono text-slate-200">record_switch</td>
+                        <td className="p-2.5 text-slate-400">Boolean</td>
+                        <td className="p-2.5 text-slate-300">
+                          <strong className="text-slate-100">Continuous SD Card Recording:</strong> <code className="text-emerald-300">true</code> engages 24/7 circular buffer recording to onboard TF/SD card; <code className="text-rose-300">false</code> records only event triggers or stays idle.
+                        </td>
+                      </tr>
+                      <tr className="hover:bg-slate-800/40">
+                        <td className="p-2.5 font-mono font-bold text-cyan-300">DP 169</td>
+                        <td className="p-2.5 font-mono text-slate-200">ipc_privacy_zone</td>
+                        <td className="p-2.5 text-slate-400">String / JSON</td>
+                        <td className="p-2.5 text-slate-300">
+                          <strong className="text-slate-100">Multi-Zone Privacy Mask:</strong> Advanced multi-polygon mask schema utilized by newer IPC firmware variants allowing multiple active exclusion zones simultaneously.
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between px-6 py-3 border-t border-slate-800 bg-slate-950/60">
+              <span className="text-xs text-slate-500">Forensic integrity priority: Read-only memory analysis and non-invasive logcat sniffing.</span>
+              <button
+                onClick={() => setIsGuideOpen(false)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-lg border border-slate-700 transition"
+              >
+                Close Guide
+              </button>
             </div>
           </div>
         </div>
