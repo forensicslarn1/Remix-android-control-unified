@@ -346,6 +346,14 @@ export class BrowserAdbClient {
     return Boolean(this.adb);
   }
 
+  get rawAdb(): Adb | null {
+    return this.adb;
+  }
+
+  getAdbInstance(): Adb | null {
+    return this.adb;
+  }
+
   get serial(): string | null {
     return this.currentDevice?.serial || null;
   }
