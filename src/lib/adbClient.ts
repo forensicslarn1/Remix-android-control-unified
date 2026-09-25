@@ -16,6 +16,7 @@ import {
   type AdbCredentialStore,
 } from "@yume-chan/adb";
 import AdbWebCredentialStore from "@yume-chan/adb-credential-web";
+import { CustomAdbCredentialStore } from "@/services/customCredentialStore";
 import {
   AdbDaemonWebUsbConnection,
   AdbDaemonWebUsbDevice,
@@ -301,8 +302,8 @@ export class BrowserAdbClient {
   private currentTransport: AdbDaemonTransport | null = null;
   private currentDevice: AdbDaemonWebUsbDevice | null = null;
   private currentConnection: AdbDaemonWebUsbConnection | null = null;
-  // IndexedDB credential store: generates and preserves RSA-2048 keys across reloads
-  private credentialStore = new AdbWebCredentialStore("android-control-unified");
+  // Default IndexedDB credential store: generates and preserves RSA-2048 keys across reloads
+  private defaultStore = new AdbWebCredentialStore("android-control-unified");
   private disconnectListeners = new Set<() => void>();
   private authStatusListeners = new Set<(status: AuthProgressStatus) => void>();
   private activeStreams = new Set<() => Promise<void> | void>();
@@ -417,7 +418,8 @@ export class BrowserAdbClient {
 
     this.isDisconnectRequested = false;
 
-    let device = targetDevice;
+    let device: AdbDaemonWebUsbDevice | undefined =
+      targetDevice && typeof (targetDevice as any).connect === "function" ? targetDevice : undefined;
     if (!device) {
       device = await manager.requestDevice();
       if (!device) {
@@ -511,10 +513,14 @@ export class BrowserAdbClient {
       }
 
       try {
+        // Create the default store and wrap with CustomAdbCredentialStore
+        const defaultStore = this.defaultStore;
+        const credentialStore = new CustomAdbCredentialStore(defaultStore);
+
         const candidateTransport = await AdbDaemonTransport.authenticate({
           serial: device.serial,
           connection,
-          credentialStore: this.credentialStore,
+          credentialStore,
           authenticators,
           preserveConnection: true,
         });

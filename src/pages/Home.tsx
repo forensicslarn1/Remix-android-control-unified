@@ -20,8 +20,9 @@ import { ShortcutGuideDialog } from "@/components/ShortcutGuideDialog";
 import { WebUsbConnectionManager } from "@/components/WebUsbConnectionManager";
 import { LogcatViewer } from "@/components/LogcatViewer";
 import { IoTTriageView } from "@/components/IoTTriageView";
+import { DeviceDiagnosticsWorkspace } from "@/components/DeviceDiagnosticsWorkspace";
 import { createCaseId, exportTimestampedCaseBundle } from "@/lib/caseBundle";
-import { AlertTriangle, AppWindow, ArrowRight, ArrowUpDown, Bot, Boxes, Check, CheckCircle2, CheckSquare, ChevronRight, CircleAlert, ClipboardCheck, ClipboardList, Cpu, Download, Eye, EyeOff, FileArchive, FileText, Filter, Folder, HardDrive, History, HelpCircle, Info, Keyboard, Languages, Layers, ListFilter, Loader2, Lock, LockKeyhole, MonitorUp, Moon, PackageOpen, PauseCircle, Play, PlugZap, RefreshCw, RotateCcw, Search, ShieldAlert, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square, TerminalSquare, Trash2, Unplug, Upload, Usb, UsersRound, Sun, X } from "lucide-react";
+import { Activity, AlertTriangle, AppWindow, ArrowRight, ArrowUpDown, Bot, Boxes, Check, CheckCircle2, CheckSquare, ChevronRight, CircleAlert, ClipboardCheck, ClipboardList, Cpu, Download, Eye, EyeOff, FileArchive, FileText, Filter, Folder, HardDrive, History, HelpCircle, Info, Keyboard, Languages, Layers, ListFilter, Loader2, Lock, LockKeyhole, MonitorUp, Moon, PackageOpen, PauseCircle, Play, PlugZap, RefreshCw, RotateCcw, Search, ShieldAlert, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square, TerminalSquare, Trash2, Unplug, Upload, Usb, UsersRound, Sun, X } from "lucide-react";
 import GeminiChatWorkspace from "@/components/GeminiChatWorkspace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -53,13 +54,14 @@ import {
   type SortOrder,
 } from "@/lib/packageCategories";
 
-type Workspace = "overview" | "chat" | "debloat" | "degoogle" | "logcat" | "iot-triage" | "privacy" | "mirror" | "profiles" | "apk" | "files" | "evidence" | "history" | "about";
+type Workspace = "overview" | "diagnostics" | "chat" | "debloat" | "degoogle" | "logcat" | "iot-triage" | "privacy" | "mirror" | "profiles" | "apk" | "files" | "evidence" | "history" | "about";
 type InterfaceLanguage = "en" | "ar" | "other";
 type Receipt = CommandResult & { label: string; authority: "USB" | "Root" | "Browser"; restore?: string };
 type ReceiptArchive = { id: string; name: string; createdAt: string; updatedAt: string; receipts: HistoryReceipt[] };
 
 const nav: Array<{ id: Workspace; label: string; icon: typeof Smartphone }> = [
   { id: "overview", label: "Device desk", icon: Smartphone },
+  { id: "diagnostics", label: "Device Diagnostics", icon: Activity },
   { id: "chat", label: "Gemini Chat", icon: Bot },
   { id: "debloat", label: "Debloat", icon: PackageOpen },
   { id: "degoogle", label: "De-Google", icon: ShieldCheck },
@@ -80,7 +82,7 @@ const languageCopy = {
     direction: "ltr" as const,
     language: "Interface language",
     choices: { en: "English", ar: "العربية", other: "Other languages" },
-    nav: { overview: "Device desk", chat: "Gemini Chat", debloat: "Debloat", degoogle: "De-Google", logcat: "Logcat", "iot-triage": "IoT DFIR Triage", privacy: "Privacy", mirror: "Mirror", profiles: "Work profiles", apk: "APK desk", files: "Files", evidence: "Evidence Snapshot", history: "Receipt history", about: "About" },
+    nav: { overview: "Device desk", diagnostics: "Device Diagnostics", chat: "Gemini Chat", debloat: "Debloat", degoogle: "De-Google", logcat: "Logcat", "iot-triage": "IoT DFIR Triage", privacy: "Privacy", mirror: "Mirror", profiles: "Work profiles", apk: "APK desk", files: "Files", evidence: "Evidence Snapshot", history: "Receipt history", about: "About" },
     ready: "ready",
     inspect: "Inspect first. Change only what you can explain.",
     about: "About Forensicslarn",
@@ -89,7 +91,7 @@ const languageCopy = {
     direction: "rtl" as const,
     language: "لغة الواجهة",
     choices: { en: "English", ar: "العربية", other: "لغات أخرى" },
-    nav: { overview: "لوحة الجهاز", chat: "مساعد Gemini", debloat: "تنظيف التطبيقات", degoogle: "إزالة Google", logcat: "سجل النظام (Logcat)", "iot-triage": "فحص IoT DFIR", privacy: "الخصوصية", mirror: "نسخ الشاشة", profiles: "ملفات العمل", apk: "حزمة APK", files: "الملفات", evidence: "لقطة الأدلة", history: "أرشيف الإيصالات", about: "حول" },
+    nav: { overview: "لوحة الجهاز", diagnostics: "تشخيص الجهاز", chat: "مساعد Gemini", debloat: "تنظيف التطبيقات", degoogle: "إزالة Google", logcat: "سجل النظام (Logcat)", "iot-triage": "فحص IoT DFIR", privacy: "الخصوصية", mirror: "نسخ الشاشة", profiles: "ملفات العمل", apk: "حزمة APK", files: "الملفات", evidence: "لقطة الأدلة", history: "أرشيف الإيصالات", about: "حول" },
     ready: "جاهز",
     inspect: "افحص أولاً. غيّر فقط ما تستطيع شرحه.",
     about: "حول Forensicslarn",
@@ -98,7 +100,7 @@ const languageCopy = {
     direction: "ltr" as const,
     language: "Interface language",
     choices: { en: "English", ar: "العربية", other: "Other languages" },
-    nav: { overview: "Device desk", chat: "Gemini Chat", debloat: "Debloat", degoogle: "De-Google", logcat: "Logcat", "iot-triage": "IoT DFIR Triage", privacy: "Privacy", mirror: "Mirror", profiles: "Work profiles", apk: "APK desk", files: "Files", evidence: "Evidence Snapshot", history: "Receipt history", about: "About" },
+    nav: { overview: "Device desk", diagnostics: "Device Diagnostics", chat: "Gemini Chat", debloat: "Debloat", degoogle: "De-Google", logcat: "Logcat", "iot-triage": "IoT DFIR Triage", privacy: "Privacy", mirror: "Mirror", profiles: "Work profiles", apk: "APK desk", files: "Files", evidence: "Evidence Snapshot", history: "Receipt history", about: "About" },
     ready: "ready",
     inspect: "Inspect first. Change only what you can explain.",
     about: "About Forensicslarn",
@@ -669,7 +671,9 @@ export default function Home() {
     setConnecting(true);
     setAuthPromptMessage(null);
     try {
-      const profile = await adb.current.connect(targetDevice, (promptMsg) => {
+      const validTarget =
+        targetDevice && typeof targetDevice.connect === "function" ? targetDevice : undefined;
+      const profile = await adb.current.connect(validTarget, (promptMsg) => {
         setAuthPromptMessage(promptMsg);
         toast.warning(promptMsg, { id: "adb-auth-prompt", duration: 15000 });
       });
@@ -2823,6 +2827,16 @@ export default function Home() {
         {active === "logcat" && (
           <LogcatViewer
             adb={adb}
+            device={device}
+            language={language}
+            onAddReceipt={addReceipt}
+          />
+        )}
+        {active === "diagnostics" && (
+          <DeviceDiagnosticsWorkspace
+            adb={adb.current.getAdbInstance()}
+            client={adb.current}
+            isConnected={isLive}
             device={device}
             language={language}
             onAddReceipt={addReceipt}

@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import type { DeviceProfile } from "@/lib/adbClient";
+import { BrowserAdbClient, type DeviceProfile } from "@/lib/adbClient";
 import {
   AlertTriangle,
   Check,
@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import React, { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import AdbKeyImporter from "./AdbKeyImporter";
 
 export interface WebUsbConnectionManagerProps {
   device: DeviceProfile | null;
@@ -100,14 +101,14 @@ export function WebUsbConnectionManager({
   const loadPairedDevices = async () => {
     if (typeof navigator !== "undefined" && "usb" in navigator) {
       try {
-        const list = await (navigator as any).usb.getDevices();
+        const list = await BrowserAdbClient.getPairedDevices();
         setPairedDevices(
           list.map((d: any) => ({
-            productName: d.productName || "Android Device",
-            manufacturerName: d.manufacturerName || "USB Device",
-            vendorId: d.vendorId,
-            productId: d.productId,
-            serialNumber: d.serialNumber,
+            productName: d.raw?.productName || "Android Device",
+            manufacturerName: d.raw?.manufacturerName || "USB Device",
+            vendorId: d.raw?.vendorId ?? 0,
+            productId: d.raw?.productId ?? 0,
+            serialNumber: d.serial,
             rawDevice: d,
           }))
         );
@@ -404,7 +405,7 @@ export function WebUsbConnectionManager({
 
               {/* Primary Connect Button */}
               <Button
-                onClick={onConnect}
+                onClick={() => onConnect()}
                 disabled={connecting || !capabilities.hasUsb}
                 className="action-button h-10 shrink-0 bg-[#14253a] px-5 font-semibold text-[#f6f2ea] hover:bg-[#223952] disabled:opacity-50 dark:bg-[#c8f04a] dark:text-[#14253a] dark:hover:bg-[#d6fa5c]"
                 id="request-webusb-access-btn"
@@ -497,6 +498,13 @@ export function WebUsbConnectionManager({
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Pre-Authorized ADB Key Importer for Broken Screen Recovery & Fast Auth */}
+            {!isConnected && (
+              <div className="mt-4">
+                <AdbKeyImporter onKeyLoaded={() => toast.success(isArabic ? "تم تحميل مفتاح ADB المعتمد بنجاح!" : "Pre-authorized ADB key loaded successfully!")} />
               </div>
             )}
           </div>

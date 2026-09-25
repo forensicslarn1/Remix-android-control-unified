@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Usb, ShieldCheck, Cpu, Smartphone, ArrowRight, Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
+import AdbKeyImporter from "./AdbKeyImporter";
 
 interface FirstRunSetupDialogProps {
   open: boolean;
@@ -94,6 +95,10 @@ export function FirstRunSetupDialog({
               <li>{isArabic ? "فعّل تصحيح أخطاء USB (USB Debugging)." : "Enable USB Debugging in Developer Options."}</li>
               <li>{isArabic ? "صل كابل USB واختر 'دائماً اسمح من هذا الحاسوب' عند ظهور نافذة التفويض." : "Connect via USB and check 'Always allow from this computer'."}</li>
             </ol>
+          </div>
+
+          <div className="pt-1">
+            <AdbKeyImporter />
           </div>
         </div>
 
