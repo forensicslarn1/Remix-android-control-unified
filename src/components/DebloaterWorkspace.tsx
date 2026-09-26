@@ -528,27 +528,34 @@ export const DebloaterWorkspace: React.FC<DebloaterWorkspaceProps> = ({
               </button>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={handleSelectAllVisible}
-                className="action-button h-8 px-2.5 text-xs border border-[#d8d1c4] dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-[#f3efe6] dark:hover:bg-slate-700 text-[#14253a] dark:text-slate-200 font-semibold"
+            <div className="flex flex-wrap items-center gap-2">
+              <label
+                className="flex items-center gap-2 px-2.5 py-1 text-xs font-semibold border border-[#d8d1c4] dark:border-slate-700 bg-white dark:bg-slate-800 text-[#14253a] dark:text-slate-200 cursor-pointer select-none rounded-xs hover:bg-[#f3efe6] dark:hover:bg-slate-700 transition-colors"
+                title={isArabic ? "تحديد أو إلغاء تحديد كل الحزم المعروضة" : "Select or deselect all visible packages"}
               >
-                {isAllVisibleSelected ? (
-                  <CheckSquare size={13} className="mr-1 text-emerald-600 inline" />
-                ) : isSomeVisibleSelected ? (
-                  <MinusSquare size={13} className="mr-1 text-amber-600 inline" />
-                ) : (
-                  <Square size={13} className="mr-1 inline" />
-                )}
-                {isAllVisibleSelected ? (isArabic ? "إلغاء تحديد الظاهر" : "Deselect Visible") : (isArabic ? "تحديد كل الظاهر" : "Select Visible")} ({filteredPackages.length})
-              </button>
+                <input
+                  type="checkbox"
+                  ref={(el) => {
+                    if (el) el.indeterminate = isSomeVisibleSelected;
+                  }}
+                  checked={isAllVisibleSelected}
+                  onChange={handleSelectAllVisible}
+                  className="h-4 w-4 accent-[#14253a] dark:accent-cyan-500 cursor-pointer rounded-xs"
+                />
+                <span>
+                  {isAllVisibleSelected
+                    ? (isArabic ? "إلغاء تحديد الكل" : "Deselect All")
+                    : (isArabic ? "تحديد الكل" : "Select All")}
+                  <span className="mono opacity-70 ml-1">({filteredPackages.length})</span>
+                </span>
+              </label>
 
               <button
                 onClick={() => {
                   const enabledIds = filteredPackages.filter((p) => p.status === "enabled").map((p) => p.id);
                   setSelected((prev) => Array.from(new Set([...prev, ...enabledIds])));
                 }}
-                className="action-button h-8 px-2.5 text-xs border border-[#b9da71] dark:border-emerald-800 bg-[#eef8cd] dark:bg-emerald-950/60 hover:bg-[#e4f2b8] text-[#3f7a18] dark:text-emerald-300 font-semibold"
+                className="action-button h-8 px-2.5 text-xs border border-[#b9da71] dark:border-emerald-800 bg-[#eef8cd] dark:bg-emerald-950/60 hover:bg-[#e4f2b8] text-[#3f7a18] dark:text-emerald-300 font-semibold cursor-pointer"
               >
                 {isArabic ? "تحديد المفعلة" : "Select Enabled"} ({filteredPackages.filter((p) => p.status === "enabled").length})
               </button>
@@ -558,7 +565,7 @@ export const DebloaterWorkspace: React.FC<DebloaterWorkspaceProps> = ({
                   const disabledIds = filteredPackages.filter((p) => p.status === "disabled").map((p) => p.id);
                   setSelected((prev) => Array.from(new Set([...prev, ...disabledIds])));
                 }}
-                className="action-button h-8 px-2.5 text-xs border border-[#fed7aa] dark:border-amber-800 bg-[#fff7ed] dark:bg-amber-950/60 hover:bg-[#ffedd5] text-[#b45309] dark:text-amber-300 font-semibold"
+                className="action-button h-8 px-2.5 text-xs border border-[#fed7aa] dark:border-amber-800 bg-[#fff7ed] dark:bg-amber-950/60 hover:bg-[#ffedd5] text-[#b45309] dark:text-amber-300 font-semibold cursor-pointer"
               >
                 {isArabic ? "تحديد المعطلة" : "Select Disabled"} ({filteredPackages.filter((p) => p.status === "disabled").length})
               </button>
@@ -566,10 +573,10 @@ export const DebloaterWorkspace: React.FC<DebloaterWorkspaceProps> = ({
               {selected.length > 0 && (
                 <button
                   onClick={() => setSelected([])}
-                  className="action-button h-8 px-2.5 text-xs border border-[#dba193] dark:border-rose-800 bg-[#fbe5df] dark:bg-rose-950/60 hover:bg-[#f8d5cc] text-[#c2362b] dark:text-rose-300 font-semibold"
+                  className="action-button h-8 px-2.5 text-xs border border-[#dba193] dark:border-rose-800 bg-[#fbe5df] dark:bg-rose-950/60 hover:bg-[#f8d5cc] text-[#c2362b] dark:text-rose-300 font-semibold cursor-pointer"
                 >
                   <X size={12} className="inline mr-1" />
-                  {isArabic ? "مسح التحديد" : "Deselect All"}
+                  {isArabic ? "مسح التحديد" : "Clear Selection"}
                 </button>
               )}
             </div>
@@ -586,6 +593,92 @@ export const DebloaterWorkspace: React.FC<DebloaterWorkspaceProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Top Batch-Action Bar (Shown when 1 or more packages are selected) */}
+      {selected.length > 0 && (
+        <div className="service-card p-4 border-[#14253a] dark:border-cyan-800 bg-[#eef4f9] dark:bg-slate-800/95 flex flex-col md:flex-row md:items-center md:justify-between gap-3 shadow-md animate-in fade-in slide-in-from-top-2 duration-150">
+          <div className="flex items-center gap-3">
+            <span className="state-square p-2 border-[#14253a] dark:border-cyan-500 bg-[#14253a] dark:bg-cyan-950 text-[#c8f04a] dark:text-cyan-300 shrink-0">
+              <CheckSquare size={18} />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-[#14253a] dark:text-slate-100">
+                  {isArabic ? "شريط العمليات المجمعة المباشرة" : "Simultaneous Batch Action Bar"}
+                </h3>
+                <span className="mono text-xs font-bold px-2 py-0.5 bg-[#14253a] text-white dark:bg-cyan-900 dark:text-cyan-200 rounded-xs">
+                  {selected.length} {isArabic ? "حزمة محددة للتنفيذ" : "packages selected"}
+                </span>
+              </div>
+              <p className="text-xs text-[#526273] dark:text-slate-400 mt-0.5">
+                {isArabic
+                  ? "تطبيق فوري لأوامر ADB المباشرة على جميع الحزم المحددة في وقت واحد دون قيود:"
+                  : "Execute unrestricted raw commands simultaneously across all selected packages:"}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 1. Batch Disable */}
+            <Button
+              size="sm"
+              disabled={bulkExecuting}
+              onClick={() => setConfirmModal({ open: true, action: "disable", targets: selected })}
+              className="action-button h-8 px-3 text-xs bg-[#f59e0b] hover:bg-[#d97706] text-black font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="pm disable-user --user 0 <package_name>"
+            >
+              <PauseCircle size={14} />
+              <span>{isArabic ? "تعطيل مجمع" : "Batch Disable"}</span>
+            </Button>
+
+            {/* 2. Batch Uninstall Keep Data */}
+            <Button
+              size="sm"
+              disabled={bulkExecuting}
+              onClick={() => setConfirmModal({ open: true, action: "uninstall-k", targets: selected })}
+              className="action-button h-8 px-3 text-xs bg-[#ea580c] hover:bg-[#c2410c] text-white font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="pm uninstall -k --user 0 <package_name>"
+            >
+              <FolderMinus size={14} />
+              <span>{isArabic ? "إلغاء وإبقاء البيانات (-k)" : "Batch Uninstall (-k)"}</span>
+            </Button>
+
+            {/* 3. Batch Full Purge */}
+            <Button
+              size="sm"
+              disabled={bulkExecuting}
+              onClick={() => setConfirmModal({ open: true, action: "purge", targets: selected })}
+              className="action-button h-8 px-3 text-xs bg-[#dc2626] hover:bg-[#b91c1c] text-white font-bold flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="pm uninstall --user 0 <package_name>"
+            >
+              <Trash2 size={14} />
+              <span>{isArabic ? "إزالة كاملة (Purge)" : "Batch Purge"}</span>
+            </Button>
+
+            {/* Batch Restore */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={bulkExecuting}
+              onClick={() => setConfirmModal({ open: true, action: "restore", targets: selected })}
+              className="action-button h-8 px-3 text-xs border-emerald-600 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950 font-bold flex items-center gap-1.5 cursor-pointer bg-white dark:bg-slate-900"
+              title="cmd package install-existing --user 0 <package_name> / pm enable"
+            >
+              <RotateCcw size={13} />
+              <span>{isArabic ? "استعادة" : "Restore"}</span>
+            </Button>
+
+            <button
+              onClick={() => setSelected([])}
+              className="action-button h-8 px-2.5 text-xs text-[#687584] hover:text-[#14253a] dark:text-slate-400 dark:hover:text-slate-200 border border-[#d8d1c4] dark:border-slate-700 bg-white dark:bg-slate-800 cursor-pointer rounded-xs"
+              title={isArabic ? "مسح التحديد" : "Clear selection"}
+            >
+              <X size={13} className="inline mr-1" />
+              {isArabic ? "مسح التحديد" : "Clear"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Table View */}
       {filteredPackages.length === 0 ? (
@@ -675,6 +768,16 @@ export const DebloaterWorkspace: React.FC<DebloaterWorkspaceProps> = ({
                     onToggleSelect={(id) =>
                       setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
                     }
+                    onToggleAll={() => {
+                      const catIds = catPackages.map((p) => p.id);
+                      const allCatSelected = catIds.length > 0 && catIds.every((id) => selected.includes(id));
+                      if (allCatSelected) {
+                        const catSet = new Set(catIds);
+                        setSelected((prev) => prev.filter((id) => !catSet.has(id)));
+                      } else {
+                        setSelected((prev) => Array.from(new Set([...prev, ...catIds])));
+                      }
+                    }}
                     executingPkgId={executingPkgId}
                     onExecuteSingle={executeSingleAction}
                     isArabic={isArabic}
@@ -695,6 +798,7 @@ export const DebloaterWorkspace: React.FC<DebloaterWorkspaceProps> = ({
               onToggleSelect={(id) =>
                 setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
               }
+              onToggleAll={handleSelectAllVisible}
               executingPkgId={executingPkgId}
               onExecuteSingle={executeSingleAction}
               isArabic={isArabic}
@@ -979,6 +1083,7 @@ interface PackageTableContentProps {
   packages: CategorizedPackage[];
   selected: string[];
   onToggleSelect: (id: string) => void;
+  onToggleAll?: () => void;
   executingPkgId: string | null;
   onExecuteSingle: (action: RawDebloatAction, id: string) => Promise<void>;
   isArabic: boolean;
@@ -990,19 +1095,32 @@ const PackageTableContent: React.FC<PackageTableContentProps> = ({
   packages,
   selected,
   onToggleSelect,
+  onToggleAll,
   executingPkgId,
   onExecuteSingle,
   isArabic,
   language,
   showCategoryCol = false,
 }) => {
+  const isAllChecked = packages.length > 0 && packages.every((p) => selected.includes(p.id));
+  const isSomeChecked = packages.some((p) => selected.includes(p.id)) && !isAllChecked;
+
   return (
     <table className="w-full min-w-[780px] text-left text-xs">
       <thead className="bg-[#f3efe6] dark:bg-slate-800/90 text-[0.64rem] uppercase tracking-[0.12em] text-[#687584] dark:text-slate-400 border-b border-[#d8d1c4] dark:border-slate-800">
         <tr>
-          <th className="w-10 px-4 py-3 text-center">
-            {/* Clickable indicator */}
-            <span className="sr-only">Select</span>
+          <th className="w-12 px-3 py-3 text-center">
+            <input
+              type="checkbox"
+              ref={(el) => {
+                if (el) el.indeterminate = isSomeChecked;
+              }}
+              checked={isAllChecked}
+              onChange={() => onToggleAll?.()}
+              aria-label={isArabic ? "تحديد أو إلغاء تحديد الكل في هذا الجدول" : "Select or deselect all in table"}
+              title={isAllChecked ? (isArabic ? "إلغاء تحديد الكل" : "Deselect All") : (isArabic ? "تحديد الكل" : "Select All")}
+              className="h-4 w-4 accent-[#14253a] dark:accent-cyan-500 cursor-pointer rounded-xs"
+            />
           </th>
           {showCategoryCol && <th className="px-3 py-3">{isArabic ? "التصنيف" : "Category"}</th>}
           <th className="px-3 py-3">{isArabic ? "معرف الحزمة والتفاصيل" : "Package ID & Details"}</th>
