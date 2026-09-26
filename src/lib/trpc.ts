@@ -6,7 +6,4 @@ export const trpc: any = {
     me: { useQuery: () => ({ data: null, isLoading: false, error: null, refetch: () => Promise.resolve() }) },
     logout: { useMutation: () => ({ mutateAsync: () => Promise.resolve(), isPending: false, error: null }) },
   },
-  ai: {
-    chat: { useMutation: () => ({ mutate: () => {}, isPending: false }) },
-  },
 };
