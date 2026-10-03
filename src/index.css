@@ -135,3 +135,47 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
+
+/* Forensic Report Print Rules */
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 12mm 15mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+  }
+
+  .no-print,
+  nav,
+  header,
+  footer,
+  aside,
+  section.mt-7,
+  [role="dialog"] {
+    display: none !important;
+  }
+
+  .forensic-dossier-print {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  .forensic-dossier-print table {
+    page-break-inside: avoid;
+  }
+
+  .forensic-dossier-print tr {
+    page-break-inside: avoid;
+  }
+}
+

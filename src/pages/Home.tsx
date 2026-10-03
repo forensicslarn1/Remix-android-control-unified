@@ -5,7 +5,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/contexts/ThemeContext";
-import { BrowserAdbClient, DEBLOAT_EXECUTION_LEVELS, type DebloatExecutionLevel, type CommandResult, type DeviceFile, type DeviceProfile, type MirrorSession } from "@/lib/adbClient";
+import { BrowserAdbClient, DEBLOAT_EXECUTION_LEVELS, type DebloatExecutionLevel, type CommandResult, type DeviceFile, type DeviceProfile, type MirrorSession, type MirrorState } from "@/lib/adbClient";
 import { COMMUNITY_SOURCE, fetchCommunityCatalog, type CommunityPackage } from "@/lib/communityCatalog";
 import AboutWorkspace from "@/components/AboutWorkspace";
 import { DeGoogleWorkspace, type FavoriteAlternative } from "@/components/DeGoogleWorkspace";
@@ -13,17 +13,20 @@ import { EvidenceSnapshotWorkspace, type EvidenceOperation, type EvidenceOutcome
 import { FirstRunSetupDialog } from "@/components/FirstRunSetupDialog";
 import { NotificationCenter, loadLocalNotifications } from "@/components/NotificationCenter";
 import { type AppNotification, type NotificationTone } from "@/lib/notificationUtils";
-import { LiveMirrorWorkspace, type MirrorState } from "@/components/LiveMirrorWorkspace";
 import { ReceiptHistoryWorkspace, type HistoryReceipt } from "@/components/ReceiptHistoryWorkspace";
-import { ApkInspectionWorkspace } from "@/components/ApkInspectionWorkspace";
+import { ApkInspectorWorkspace } from "@/components/ApkInspectorWorkspace";
 import { ShortcutGuideDialog } from "@/components/ShortcutGuideDialog";
 import { WebUsbConnectionManager } from "@/components/WebUsbConnectionManager";
 import { LogcatViewer } from "@/components/LogcatViewer";
 import { IoTTriageView } from "@/components/IoTTriageView";
 import { DeviceDiagnosticsWorkspace } from "@/components/DeviceDiagnosticsWorkspace";
 import { createCaseId, exportTimestampedCaseBundle } from "@/lib/caseBundle";
-import { Activity, AlertTriangle, AppWindow, ArrowRight, ArrowUpDown, Boxes, Check, CheckCircle2, CheckSquare, ChevronRight, CircleAlert, ClipboardCheck, ClipboardList, Cpu, Download, Eye, EyeOff, FileArchive, FileText, Filter, Folder, HardDrive, History, HelpCircle, Info, Keyboard, Languages, Layers, ListFilter, Loader2, Lock, LockKeyhole, MonitorUp, Moon, PackageOpen, PauseCircle, Play, PlugZap, RefreshCw, RotateCcw, Search, ShieldAlert, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square, TerminalSquare, Trash2, Unplug, Upload, Usb, UsersRound, Sun, X } from "lucide-react";
+import { Activity, AlertTriangle, AppWindow, ArrowRight, ArrowUpDown, Boxes, Check, CheckCircle2, CheckSquare, ChevronRight, CircleAlert, ClipboardCheck, ClipboardList, Cpu, Download, Eye, EyeOff, FileArchive, FileText, Filter, Folder, HardDrive, History, HelpCircle, Info, Keyboard, Languages, Layers, ListFilter, Loader2, Lock, LockKeyhole, MonitorUp, Moon, Network, PackageOpen, PauseCircle, Play, PlugZap, RefreshCw, RotateCcw, Search, ShieldAlert, ShieldCheck, SlidersHorizontal, Smartphone, Sparkles, Square, TerminalSquare, Trash2, Unplug, Upload, Usb, UsersRound, Sun, X } from "lucide-react";
 import DebloaterWorkspace from "@/components/DebloaterWorkspace";
+import { ForensicReportWorkspace } from "@/components/ForensicReportWorkspace";
+import { TerminalWorkspace } from "@/components/TerminalWorkspace";
+import { MirrorWorkspace } from "@/components/MirrorWorkspace";
+import { NetworkPrivacyWorkspace } from "@/components/NetworkPrivacyWorkspace";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AppCategoryBadge, PackageStatusBadge, DebloatExecutionBadge, CategoryGlyph } from "@/components/AppCategoryBadge";
@@ -42,7 +45,7 @@ import {
   type SortOrder,
 } from "@/lib/packageCategories";
 
-type Workspace = "overview" | "diagnostics" | "debloat" | "degoogle" | "logcat" | "iot-triage" | "privacy" | "mirror" | "profiles" | "apk" | "files" | "evidence" | "history" | "about";
+type Workspace = "overview" | "diagnostics" | "debloat" | "degoogle" | "logcat" | "iot-triage" | "network-privacy" | "terminal" | "mirror" | "privacy" | "profiles" | "apk" | "files" | "evidence" | "history" | "report" | "about";
 type InterfaceLanguage = "en" | "ar" | "other";
 type Receipt = CommandResult & { label: string; authority: "USB" | "Root" | "Browser"; restore?: string };
 type ReceiptArchive = { id: string; name: string; createdAt: string; updatedAt: string; receipts: HistoryReceipt[] };
@@ -53,11 +56,13 @@ const nav: Array<{ id: Workspace; label: string; icon: typeof Smartphone }> = [
   { id: "debloat", label: "Debloat", icon: PackageOpen },
   { id: "degoogle", label: "De-Google", icon: ShieldCheck },
   { id: "logcat", label: "Logcat", icon: TerminalSquare },
+  { id: "apk", label: "05 APK Inspector / فاحص التطبيقات", icon: FileArchive },
+  { id: "network-privacy", label: "06 Network & Privacy / الشبكة والخصوصية", icon: Network },
+  { id: "terminal", label: "07 Terminal / الطرفية", icon: TerminalSquare },
+  { id: "mirror", label: "08 Mirror / بث الشاشة", icon: MonitorUp },
+  { id: "report", label: "09 Report / التقرير الجنائي", icon: ClipboardCheck },
   { id: "iot-triage", label: "IoT DFIR Triage", icon: ShieldAlert },
-  { id: "privacy", label: "Privacy", icon: ShieldCheck },
-  { id: "mirror", label: "Mirror", icon: MonitorUp },
   { id: "profiles", label: "Work profiles", icon: UsersRound },
-  { id: "apk", label: "APK desk", icon: FileArchive },
   { id: "files", label: "Files", icon: Folder },
   { id: "evidence", label: "Evidence Snapshot", icon: ClipboardCheck },
   { id: "history", label: "Receipt history", icon: History },
@@ -69,7 +74,7 @@ const languageCopy = {
     direction: "ltr" as const,
     language: "Interface language",
     choices: { en: "English", ar: "العربية", other: "Other languages" },
-    nav: { overview: "Device desk", diagnostics: "Device Diagnostics", debloat: "Debloat", degoogle: "De-Google", logcat: "Logcat", "iot-triage": "IoT DFIR Triage", privacy: "Privacy", mirror: "Mirror", profiles: "Work profiles", apk: "APK desk", files: "Files", evidence: "Evidence Snapshot", history: "Receipt history", about: "About" },
+    nav: { overview: "Device desk", diagnostics: "Device Diagnostics", debloat: "Debloat", degoogle: "De-Google", logcat: "Logcat", apk: "05 APK Inspector / فاحص التطبيقات", "iot-triage": "IoT DFIR Triage", "network-privacy": "06 Network & Privacy / الشبكة والخصوصية", terminal: "07 Terminal / الطرفية", mirror: "08 Mirror / بث الشاشة", privacy: "06 Network & Privacy / الشبكة والخصوصية", profiles: "Work profiles", files: "Files", evidence: "Evidence Snapshot", history: "Receipt history", report: "09 Report / التقرير الجنائي", about: "About" },
     ready: "ready",
     inspect: "Inspect first. Change only what you can explain.",
     about: "About Forensicslarn",
@@ -78,7 +83,7 @@ const languageCopy = {
     direction: "rtl" as const,
     language: "لغة الواجهة",
     choices: { en: "English", ar: "العربية", other: "لغات أخرى" },
-    nav: { overview: "لوحة الجهاز", diagnostics: "تشخيص الجهاز", debloat: "تنظيف التطبيقات", degoogle: "إزالة Google", logcat: "سجل النظام (Logcat)", "iot-triage": "فحص IoT DFIR", privacy: "الخصوصية", mirror: "نسخ الشاشة", profiles: "ملفات العمل", apk: "حزمة APK", files: "الملفات", evidence: "لقطة الأدلة", history: "أرشيف الإيصالات", about: "حول" },
+    nav: { overview: "لوحة الجهاز", diagnostics: "تشخيص الجهاز", debloat: "تنظيف التطبيقات", degoogle: "إزالة Google", logcat: "سجل النظام (Logcat)", apk: "05 APK Inspector / فاحص التطبيقات", "iot-triage": "فحص IoT DFIR", "network-privacy": "06 Network & Privacy / الشبكة والخصوصية", terminal: "07 Terminal / الطرفية", mirror: "08 Mirror / بث الشاشة", privacy: "06 Network & Privacy / الشبكة والخصوصية", profiles: "ملفات العمل", files: "الملفات", evidence: "لقطة الأدلة", history: "أرشيف الإيصالات", report: "09 Report / التقرير الجنائي", about: "حول" },
     ready: "جاهز",
     inspect: "افحص أولاً. غيّر فقط ما تستطيع شرحه.",
     about: "حول Forensicslarn",
@@ -87,7 +92,7 @@ const languageCopy = {
     direction: "ltr" as const,
     language: "Interface language",
     choices: { en: "English", ar: "العربية", other: "Other languages" },
-    nav: { overview: "Device desk", diagnostics: "Device Diagnostics", debloat: "Debloat", degoogle: "De-Google", logcat: "Logcat", "iot-triage": "IoT DFIR Triage", privacy: "Privacy", mirror: "Mirror", profiles: "Work profiles", apk: "APK desk", files: "Files", evidence: "Evidence Snapshot", history: "Receipt history", about: "About" },
+    nav: { overview: "Device desk", diagnostics: "Device Diagnostics", debloat: "Debloat", degoogle: "De-Google", logcat: "Logcat", apk: "05 APK Inspector / فاحص التطبيقات", "iot-triage": "IoT DFIR Triage", "network-privacy": "06 Network & Privacy / الشبكة والخصوصية", terminal: "07 Terminal / الطرفية", mirror: "08 Mirror / بث الشاشة", privacy: "06 Network & Privacy / الشبكة والخصوصية", profiles: "Work profiles", files: "Files", evidence: "Evidence Snapshot", history: "Receipt history", report: "09 Report / التقرير الجنائي", about: "About" },
     ready: "ready",
     inspect: "Inspect first. Change only what you can explain.",
     about: "About Forensicslarn",
@@ -692,8 +697,8 @@ export default function Home() {
   const isLive = Boolean(device);
   const isArabic = language === "ar";
   const navGroups = isArabic
-    ? [{ label: "تحكم وإدارة الجهاز", items: nav.slice(0, 7) }, { label: "المراجعة والأمان", items: nav.slice(7, 10) }, { label: "الأدلة والتاريخ", items: nav.slice(10) }]
-    : [{ label: "Device control & management", items: nav.slice(0, 7) }, { label: "Review & safety", items: nav.slice(7, 10) }, { label: "Evidence & history", items: nav.slice(10) }];
+    ? [{ label: "تحكم وإدارة الجهاز", items: nav.slice(0, 10) }, { label: "المراجعة والأمان", items: nav.slice(10, 13) }, { label: "الأدلة والتاريخ", items: nav.slice(13) }]
+    : [{ label: "Device control & management", items: nav.slice(0, 10) }, { label: "Review & safety", items: nav.slice(10, 13) }, { label: "Evidence & history", items: nav.slice(13) }];
   const debloatCopy = isArabic ? {
     context: "سياق المجتمع + الجرد المحلي", title: "ضع فقط التغييرات التي تفهمها في القائمة.", description: "تُطلب التعريفات من مستودع UAD-ng العام فقط عند اختيار التحديث. تبقى معرّفات الحزم المثبتة على هذا الجهاز. الإيقاف القابل للاستعادة للمستخدم 0 هو الخيار الآمن الافتراضي.", refresh: "تحديث قائمة المجتمع", refreshDevice: "تحديث حالة الجهاز", source: "المصدر:", notDownloaded: "لم يتم التنزيل", review: "مراجعة المصدر", connectTitle: "صِل جهازاً لمطابقة الحزم.", connectDetail: "يمكن تحديث قائمة المجتمع الآن، لكن مطابقة الحزم ووضعها في القائمة يتطلبان جرد أندرويد محلياً.", loadTitle: "حمّل تعريفات المجتمع لتصنيف هذا الجهاز.", loadDetail: "معرّفات الحزم المحلية جاهزة. يجري التحديث طلباً عاماً واحداً إلى GitHub ولا يرفع الجرد.", search: "ابحث في الحزم أو التصنيفات…", recommended: "الموصى بإزالتها فقط", package: "الحزمة", category: "التصنيف", allCategories: "جميع التصنيفات", status: "الحالة", allStatuses: "جميع الحالات", enabledOnly: "المفعلة فقط", disabledOnly: "المعطلة فقط", sortBy: "ترتيب حسب", sortCategory: "التصنيف", sortStatus: "حالة التفعيل", sortPackageId: "اسم الحزمة", sortRisk: "مستوى التوصية", viewMode: "طريقة العرض", groupByCategory: "تجميع حسب التصنيف", flatTable: "جدول موحد", assessment: "تقييم المصدر", purpose: "الغرض والاعتماديات", restore: "استعادة", quickDisable: "تعطيل", quickEnable: "إعادة تفعيل", selected: "محدد", matched: "مطابق", only: "يبدأ الموصى به فقط مفعلاً.", disable: "إيقاف للمستخدم 0 (افتراضي)", uninstall: "إزالة للمستخدم 0 (متقدم)", restoreMode: "إعادة تفعيل / استعادة للمستخدم 0", reviewCommands: "مراجعة", commands: "أمر", descriptionSource: "وصف المصدر العام", neededBy: "تحتاجه", reviewRequired: "المراجعة مطلوبة", apply: "تطبيق الأوامر المراجعة", cancel: "إلغاء", selectAllCategory: "تحديد كل تطبيقات التصنيف", risk: "استخدم على مسؤوليتك. يمكن لمصنّعي الأجهزة تقييد الحزم وتصنيف المجتمع ليس ضماناً. ستضاف النتائج ومحاولات الاستعادة إلى سجل الأوامر المحلي.", noMatches: "لا توجد تطبيقات تطابق معايير البحث أو التصفية الحالية.",
   } : {
@@ -932,13 +937,50 @@ export default function Home() {
             isConnected={isLive}
           />
         )}
-        {active === "privacy" && <PrivacyWorkspace language={language} isLive={isLive} run={async (command, label) => { try { const result = await adb.current.run(command); addReceipt(result, label); toast.success(language === "ar" ? "اكتمل فحص الخصوصية." : "Privacy check completed."); } catch (error) { toast.error(error instanceof Error ? error.message : "Command could not run."); } }} />}
-        {active === "mirror" && <LiveMirrorWorkspace language={language} isLive={isLive} state={mirrorState} canvasRef={mirrorCanvas} start={startLiveMirror} stop={stopLiveMirror} />}
+        {active === "terminal" && (
+          <TerminalWorkspace
+            client={adb.current}
+            isConnected={isLive}
+            language={language}
+            device={device}
+          />
+        )}
+        {active === "mirror" && (
+          <MirrorWorkspace
+            client={adb.current}
+            isConnected={isLive}
+            language={language}
+            device={device}
+          />
+        )}
+        {(active === "network-privacy" || active === "privacy") && (
+          <NetworkPrivacyWorkspace
+            client={adb.current}
+            isConnected={isLive}
+            language={language}
+            device={device}
+          />
+        )}
         {active === "profiles" && <ProfilesWorkspace language={language} isLive={isLive} output={userOutput} refresh={async () => { try { const result = await adb.current.listUsers(); setUserOutput(result.stdout); addReceipt(result, language === "ar" ? "تم تحديث مستخدمي وملفات أندرويد" : "Refreshed Android users and profiles"); } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to inspect profiles."); } }} />}
-        {active === "apk" && <ApkInspectionWorkspace language={language} isLive={isLive} install={installApk} />}
+        {active === "apk" && (
+          <ApkInspectorWorkspace
+            client={adb.current}
+            isConnected={isLive}
+            language={language}
+            device={device}
+          />
+        )}
         {active === "files" && <FilesWorkspace language={language} isLive={isLive} path={filePath} setPath={setFilePath} files={files} loading={fileLoading} load={loadFiles} />}
         {active === "evidence" && <EvidenceSnapshotWorkspace language={language} isLive={isLive} device={device} run={runEvidenceOperation} exportCase={exportEvidenceCase} openSetup={() => setSetupOpen(true)} />}
         {active === "history" && <ReceiptHistoryWorkspace language={language} history={receiptHistory} archives={receiptArchives.map(({ id, name, createdAt, updatedAt, receipts }) => ({ id, name, createdAt, updatedAt, receiptCount: receipts.length }))} activeArchiveId={activeReceiptArchive?.id || PRIMARY_ARCHIVE_ID} selectArchive={setActiveReceiptArchiveId} createArchive={createReceiptArchive} renameArchive={renameReceiptArchive} deleteArchive={deleteReceiptArchive} remove={removeHistoryReceipt} clear={clearReceiptHistory} updateTags={updateHistoryTags} exportHistory={exportHistory} protectHistory={protectHistory} importHistory={importProtectedHistory} />}
+        {active === "report" && (
+          <ForensicReportWorkspace
+            client={adb.current}
+            isConnected={isLive}
+            language={language}
+            device={device}
+          />
+        )}
         {active === "about" && <AboutWorkspace language={language} />}
 
         <section className="mt-7 border-t border-[#d8d1c4] pt-5 dark:border-slate-800"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><div className="flex items-center gap-2"><p className="kicker text-[#687584] dark:text-slate-400">{isArabic ? "تفاصيل المشغّل" : "Operator detail"}</p><span className="status-stamp text-[#59869c] dark:text-cyan-400 dark:border-cyan-500/40">{isArabic ? "مسجل" : "logged"}</span></div><p className="mt-1 text-sm text-[#526273] dark:text-slate-300">{isArabic ? "شغّل أمر shell مقصوداً. يُسجل كما هو ويستخدم تصحيح USB القياسي ما لم تكتب أمر su -c بنفسك." : "Run a deliberate shell command. It is logged as-is and uses standard USB debugging unless you write an `su -c` command yourself."}</p></div><div className="flex w-full max-w-xl gap-2"><input value={terminal} onChange={(event) => setTerminal(event.target.value)} onKeyDown={(event) => event.key === "Enter" && runTerminal()} placeholder="e.g. getprop ro.build.fingerprint" className="h-10 min-w-0 flex-1 border border-[#d8d1c4] bg-[#fffdf8] px-3 mono text-xs outline-none focus:border-[#14253a] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:border-cyan-500 dark:focus:ring-1 dark:focus:ring-cyan-500" /><Button onClick={runTerminal} disabled={!isLive || terminalRunning} variant="outline" className="action-button border-[#14253a] dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-800">{terminalRunning ? <Loader2 className="animate-spin" size={16} /> : <TerminalSquare size={16} />}</Button></div></div></section>
@@ -957,26 +999,6 @@ export default function Home() {
 
 function EmptyState({ title, copy, action, label }: { title: string; copy: string; action: () => void; label: string }) {
   return <div className="service-card p-8 text-center"><HardDrive className="mx-auto text-[#59869c]" size={27} /><h3 className="mt-4 text-xl font-bold tracking-[-0.04em]">{title}</h3><p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[#526273]">{copy}</p><Button onClick={action} className="action-button mt-5 bg-[#14253a] text-[#f6f2ea] hover:bg-[#223952]">{label}<ChevronRight className="ml-1" size={16} /></Button></div>;
-}
-
-function PrivacyWorkspace({ language, isLive, run }: { language: InterfaceLanguage; isLive: boolean; run: (command: string, label: string) => Promise<void> }) {
-  const isArabic = language === "ar";
-  const actions = isArabic ? [
-    ["مراجعة حالة الموقع", "settings get secure location_mode", "للقراءة فقط · قد يقيّد أندرويد الإجابة"],
-    ["مراجعة DNS الخاص", "settings get global private_dns_mode && settings get global private_dns_specifier", "للقراءة فقط · يتحقق من سياسة DNS الحالية"],
-    ["مراجعة ADB عبر الشبكة", "getprop service.adb.tcp.port", "للقراءة فقط · يكشف منفذ تصحيح يستمع"],
-    ["عرض منح أذونات وقت التشغيل", "dumpsys package packages | grep -E 'granted=true|granted=true' | head -120", "قراءة متقدمة فقط · تختلف النتائج باختلاف إصدار أندرويد"],
-  ] : [
-    ["Review location state", "settings get secure location_mode", "Read-only · Android may restrict the answer"],
-    ["Review private DNS", "settings get global private_dns_mode && settings get global private_dns_specifier", "Read-only · verifies current DNS policy"],
-    ["Review ADB over network", "getprop service.adb.tcp.port", "Read-only · detects a listening debug port"],
-    ["List runtime permission grants", "dumpsys package packages | grep -E 'granted=true|granted=true' | head -120", "Advanced read-only · output varies by Android version"],
-  ];
-  return <section className="space-y-5"><div className="relative overflow-hidden border border-[#d8d1c4] bg-[#fffdf8]"><img src="/manus-storage/privacy-workstation_68e7bcbd.jpg" alt="Privacy workstation" className="absolute right-0 top-0 h-full w-48 object-cover opacity-70 sm:w-72" /><div className="relative max-w-2xl p-6 sm:p-7"><p className="kicker text-[#687584]">{isArabic ? "راجع قبل التغيير" : "Review before toggle"}</p><h2 className="mt-2 text-3xl font-bold tracking-[-0.05em]">{isArabic ? "تحتاج أدوات الخصوصية إلى سياق الجهاز." : "Privacy controls need device context."}</h2><p className="mt-3 text-sm leading-6 text-[#526273]">{isArabic ? "تبدأ هذه المحطة بفحوصات للقراءة فقط. تعتمد إعدادات أندرويد على الشركة والسياسة، لذلك تعرض اللوحة النتيجة الدقيقة قبل اقتراح مسار تغيير." : "This workstation begins with read-only checks. Android settings are vendor- and policy-dependent, so the desk shows the exact result before presenting a change path."}</p></div></div><div className="grid gap-4 md:grid-cols-2">{actions.map(([label, command, note]) => <div className="service-card p-5" key={label}><div className="flex items-start justify-between"><ShieldCheck size={18} className="text-[#59869c]" /><span className="status-stamp text-[#687584]">{isArabic ? "قراءة" : "read"}</span></div><h3 className="mt-5 font-bold">{label}</h3><p className="mt-2 mono text-[0.68rem] leading-5 text-[#526273]">{command}</p><p className="mt-3 text-xs leading-5 text-[#687584]">{note}</p><Button variant="outline" disabled={!isLive} onClick={() => run(command, label)} className="action-button mt-5 border-[#14253a]">{isArabic ? "تشغيل الفحص" : "Run check"} <ArrowRight className="ml-2" size={15} /></Button></div>)}</div><div className="border-l-2 border-[#d39152] bg-[#fff2e1] p-4 text-sm leading-6 text-[#6d5133]"><strong>{isArabic ? "لماذا لا توجد قائمة تغييرات عامة؟" : "Why no universal toggle list?"}</strong> {isArabic ? "قد ترفض سياسة النظام أوامر إعدادات أندرويد، أو تطبقها بطريقة مختلفة حسب الإصدار، أو ينتج عنها أثر غير متوقع على الجهاز. تفحص اللوحة أولاً ثم تعرض أمراً محدداً فقط عندما تفهم النتيجة الحالية للهاتف." : "Android settings commands can be rejected by system policy, apply differently by version, or carry an unexpected device-wide effect. The normal workflow inspects first, then exposes a specific command only when you understand the phone’s current result."}</div></section>;
-}
-
-function MirrorWorkspace({ isLive }: { isLive: boolean }) {
-  return <section className="space-y-5"><div className="grid gap-5 lg:grid-cols-[1.15fr_.85fr]"><div className="overflow-hidden border border-[#14253a] bg-[#14253a] p-5 text-[#f6f2ea]"><div className="flex items-center justify-between"><div><p className="kicker text-[#c8f04a]">Screen mirror</p><h2 className="mt-1 text-2xl font-bold tracking-[-0.04em]">A live session, not a disguised screenshot.</h2></div><MonitorUp className="text-[#c8f04a]" /></div><div className="relative mt-5 aspect-video overflow-hidden border border-[#2f4860] bg-[#0e1d2c]"><img src="/manus-storage/command-ledger-texture_4af88a5a.jpg" alt="Command ledger texture" className="h-full w-full object-cover opacity-20" /><div className="absolute inset-0 grid place-items-center"><div className="text-center"><Smartphone className="mx-auto text-[#c8f04a]" size={31} /><p className="mt-3 text-sm font-semibold">{isLive ? "Device transport ready" : "Connect a device first"}</p><p className="mx-auto mt-1 max-w-xs text-xs leading-5 text-[#a6b3be]">The included browser ADB layer is ready for a Scrcpy client integration. Video streaming and input forwarding require a compatible device/server pairing, so they remain visible as a verified capability rather than a fake preview.</p></div></div></div><div className="mt-4 flex items-center gap-2 text-xs text-[#b9c5cf]"><span className="status-stamp text-[#59869c]">capability</span> WebUSB + ADB session • Scrcpy adapter required for streaming</div></div><div className="service-card p-6"><p className="kicker text-[#687584]">Mirror readiness</p><div className="mt-5 space-y-4">{[["USB debugging", isLive ? "Authorized" : "Awaiting device", isLive], ["Browser video decoder", "Checked when mirror adapter starts", false], ["Device screen control", "Requires an active Scrcpy controller", false]].map(([label, status, good]) => <div className="flex items-center gap-3 border-b border-[#e3dcd0] pb-3" key={label as string}><span className={`grid h-6 w-6 place-items-center border ${good ? "border-[#b9da71] bg-[#eef8cd] text-[#527321]" : "border-[#d8d1c4] text-[#687584]"}`}>{good ? <Check size={14} /> : <HelpCircle size={14} />}</span><div><p className="text-sm font-semibold">{label}</p><p className="text-xs text-[#687584]">{status}</p></div></div>)}</div><p className="mt-5 text-xs leading-5 text-[#687584]">No root is required for Scrcpy on compatible devices. The product will not claim a mirror is active until an H.264/AV1 video stream and device controller have actually initialized.</p></div></div></section>;
 }
 
 function ProfilesWorkspace({ language, isLive, output, refresh }: { language: InterfaceLanguage; isLive: boolean; output: string; refresh: () => void }) {

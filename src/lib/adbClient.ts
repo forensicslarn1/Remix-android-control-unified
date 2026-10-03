@@ -139,6 +139,14 @@ export type MirrorSession = {
   codec: string;
 };
 
+export type MirrorState = {
+  phase: "idle" | "starting" | "live" | "stopping" | "error";
+  detail: string;
+  width?: number;
+  height?: number;
+  codec?: string;
+};
+
 export type LogcatLevel = "V" | "D" | "I" | "W" | "E" | "F";
 
 export type LogcatEntry = {
@@ -1039,6 +1047,35 @@ export class BrowserAdbClient {
       await sync.dispose();
     }
     return this.run(`pm install -r -g ${target}`);
+  }
+
+  async pullFile(remotePath: string, onProgress?: (transferredBytes: number) => void): Promise<Uint8Array> {
+    const adb = this.requireAdb();
+    const sync = await adb.sync();
+    try {
+      const stream = sync.read(remotePath);
+      const reader = stream.getReader();
+      const chunks: Uint8Array[] = [];
+      let totalLength = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          totalLength += value.byteLength;
+          if (onProgress) onProgress(totalLength);
+        }
+      }
+      const result = new Uint8Array(totalLength);
+      let offset = 0;
+      for (const chunk of chunks) {
+        result.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return result;
+    } finally {
+      await sync.dispose();
+    }
   }
 
   async listFiles(path: string): Promise<DeviceFile[]> {

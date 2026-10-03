@@ -30,6 +30,7 @@ import {
 import { AppCategoryBadge, PackageStatusBadge, CategoryGlyph } from "@/components/AppCategoryBadge";
 import type { BrowserAdbClient, CommandResult } from "@/lib/adbClient";
 import { toast } from "sonner";
+import { recordSessionPackageAction } from "@/services/forensicAuditService";
 
 export const COMMUNITY_UAD_SOURCE =
   "https://raw.githubusercontent.com/Universal-Debloater-Alliance/universal-android-debloater-next-generation/main/resources/assets/uad_lists.json";
@@ -542,6 +543,22 @@ export const DebloaterWorkspace: React.FC<DebloaterWorkspaceProps> = ({
 
       onAddReceipt(result, `${actionName}: ${pkgId}`);
 
+      // Record in immutable session audit ledger
+      const forensicAction = action === "disable"
+        ? "Disable"
+        : action === "uninstall-k"
+          ? "Uninstall -k"
+          : action === "purge"
+            ? "Purge"
+            : "Restore";
+      recordSessionPackageAction({
+        packageId: pkgId,
+        action: forensicAction,
+        exitStatus: result.exitCode === 0 ? "Success" : "Failed",
+        command: result.command,
+        details: result.exitCode === 0 ? undefined : (result.stderr || result.stdout),
+      });
+
       if (result.exitCode === 0) {
         toast.success(
           isArabic
@@ -614,6 +631,22 @@ export const DebloaterWorkspace: React.FC<DebloaterWorkspaceProps> = ({
         }
 
         onAddReceipt(res, `Bulk ${action}: ${pkgId}`);
+
+        // Record in immutable session audit ledger
+        const bulkForensicAction = action === "disable"
+          ? "Disable"
+          : action === "uninstall-k"
+            ? "Uninstall -k"
+            : action === "purge"
+              ? "Purge"
+              : "Restore";
+        recordSessionPackageAction({
+          packageId: pkgId,
+          action: bulkForensicAction,
+          exitStatus: res.exitCode === 0 ? "Success" : "Failed",
+          command: res.command,
+          details: res.exitCode === 0 ? undefined : (res.stderr || res.stdout),
+        });
 
         if (res.exitCode === 0) {
           progress.succeeded.push(pkgId);

@@ -97,7 +97,9 @@ export default defineConfig({
               id.includes("@yume-chan") ||
               id.includes("pkijs") ||
               id.includes("asn1js") ||
-              id.includes("pvtsutils")
+              id.includes("pvtsutils") ||
+              id.includes("@xterm") ||
+              id.includes("jszip")
             ) {
               return "vendor-webusb-crypto";
             }
